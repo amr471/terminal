@@ -1,0 +1,198 @@
+/*
+ * @terminal/ui component styles — Bloomberg-inspired: dark, dense,
+ * keyboard-first, minimal chrome (CLAUDE.md §5). Consumes variables from
+ * tokens.css (generated from tokens.ts). Import both in the app shell.
+ */
+
+/* ── base ── */
+.t-num {
+  font-family: var(--t-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.t-dir-up {
+  color: var(--t-color-direction-up);
+}
+.t-dir-down {
+  color: var(--t-color-direction-down);
+}
+.t-dir-flat {
+  color: var(--t-color-direction-flat);
+}
+
+/* ── panel ── */
+.t-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--t-color-surface-panel);
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  overflow: hidden;
+}
+.t-panel--focused {
+  border-color: var(--t-color-accent-amber);
+}
+.t-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--t-density-row);
+  padding: 0 var(--t-space-md);
+  border-bottom: 1px solid var(--t-color-border-subtle);
+  flex: none;
+}
+.t-panel__title {
+  margin: 0;
+  font: var(--t-font-weight-medium) var(--t-font-size-label) var(--t-font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t-color-text-secondary);
+}
+.t-panel__actions {
+  display: flex;
+  gap: var(--t-space-sm);
+  align-items: center;
+}
+.t-panel__body {
+  flex: 1;
+  overflow: auto;
+  font-size: var(--t-font-size-data);
+  color: var(--t-color-text-primary);
+}
+
+/* ── badge (health palette — not green/red) ── */
+.t-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--t-space-sm);
+  font: var(--t-font-weight-medium) var(--t-font-size-label) var(--t-font-sans);
+  color: var(--t-color-text-secondary);
+}
+.t-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+.t-badge--live {
+  color: var(--t-color-health-live);
+}
+.t-badge--degraded {
+  color: var(--t-color-health-degraded);
+}
+.t-badge--stale {
+  color: var(--t-color-health-stale);
+}
+.t-badge--down {
+  color: var(--t-color-health-down);
+}
+
+/* ── status bar ── */
+.t-statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-xl);
+  height: var(--t-density-status-bar);
+  padding: 0 var(--t-space-lg);
+  background: var(--t-color-surface-base);
+  border-bottom: 1px solid var(--t-color-border-strong);
+  z-index: var(--t-layer-status-bar);
+  font-size: var(--t-font-size-label);
+  color: var(--t-color-text-secondary);
+}
+.t-statusbar__clock {
+  font-size: var(--t-font-size-prominent);
+  color: var(--t-color-accent-amber);
+  text-align: left;
+}
+.t-statusbar__tz {
+  margin-left: var(--t-space-sm);
+  font-size: var(--t-font-size-label);
+  color: var(--t-color-text-secondary);
+}
+.t-statusbar__sessions {
+  display: flex;
+  gap: var(--t-space-lg);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.t-session {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.t-session--active {
+  color: var(--t-color-session-active);
+}
+.t-session--overlap {
+  color: var(--t-color-session-overlap);
+}
+.t-session--inactive {
+  color: var(--t-color-session-inactive);
+}
+.t-statusbar__ticker {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--t-color-text-primary);
+}
+.t-statusbar__event-chip {
+  padding: var(--t-space-xs) var(--t-space-md);
+  border: 1px solid var(--t-color-accent-amber-dim);
+  border-radius: var(--t-radius-sm);
+  color: var(--t-color-accent-amber);
+  white-space: nowrap;
+}
+
+/* ── command bar ── */
+.t-commandbar {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-md);
+  height: var(--t-density-command-bar);
+  padding: 0 var(--t-space-lg);
+  background: var(--t-color-surface-overlay);
+  border: 1px solid var(--t-color-border-strong);
+  border-radius: var(--t-radius-sm);
+  z-index: var(--t-layer-command-bar);
+}
+.t-commandbar--invalid {
+  border-color: var(--t-color-direction-down);
+}
+.t-commandbar__prompt {
+  color: var(--t-color-accent-amber);
+  font-family: var(--t-font-mono);
+  font-size: var(--t-font-size-prominent);
+}
+.t-commandbar__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--t-color-text-primary);
+  font-size: var(--t-font-size-prominent);
+  text-align: left;
+  letter-spacing: 0.05em;
+}
+.t-commandbar__input::placeholder {
+  color: var(--t-color-text-muted);
+}
+.t-commandbar:focus-within {
+  border-color: var(--t-color-accent-amber);
+  box-shadow: 0 0 0 3px var(--t-color-accent-amber-glow);
+}
+
+/* ── workspace grid ── */
+.t-workspace {
+  display: grid;
+  gap: var(--t-space-sm);
+  height: 100%;
+  padding: var(--t-space-sm);
+  background: var(--t-color-surface-base);
+}
+.t-workspace__area {
+  min-width: 0;
+  min-height: 0;
+}
