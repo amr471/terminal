@@ -16,7 +16,7 @@ Single source of truth for build progress. Works with `CLAUDE.md` (the contract)
 
 Tags are guidance, not law: if a "Sonnet" task turns out to be architecture-defining, escalate it; if an "Opus" task is routine, drop it to Sonnet.
 
-**Current position:** ▶ **F0.4** — shared foundation in `/packages`
+**Current position:** ▶ **F0.5** — design system (Bloomberg)
 
 ---
 
@@ -26,7 +26,7 @@ Tags are guidance, not law: if a "Sonnet" task turns out to be architecture-defi
 - [x] **F0.1** 🔷 Monorepo scaffold — `/apps`, `/services`, `/packages`, `/docs`; package manager + build orchestrator (pnpm + Turbo), lint/format, CI skeleton, `.env.example`.
 - [x] **F0.2** 🔷 Architecture decision record → `/docs/architecture.md` — service boundaries, data-flow diagram, Redis topic/channel naming, error/reconnect conventions.
 - [x] **F0.3** 🔷 Database schema (Postgres + TimescaleDB) → `/docs/schema.md` + migrations — candles, OI, funding, liquidation events, users, alerts, journal, strategies; hypertables + retention policies.
-- [ ] **F0.4** 🔷 Shared foundation in `/packages` — TS type definitions, RU/EN i18n scaffolding, number/date/timezone formatting utilities, user-timezone vs. fixed-NY-clock separation.
+- [x] **F0.4** 🔷 Shared foundation in `/packages` — TS type definitions, RU/EN i18n scaffolding, number/date/timezone formatting utilities, user-timezone vs. fixed-NY-clock separation.
 - [ ] **F0.5** 🔷 Design system (Bloomberg) — load the `frontend-design` skill; define tokens (amber/green/red, mono numerics), base components, layout grid, **top status bar shell**, **command bar skeleton**. Keep §5 of `CLAUDE.md` as the reference.
 - [ ] **F0.6** 🔷 `market-data-service` (Go) skeleton — connection manager, normalization layer, reconnection + health-check framework, Redis publisher. No live feeds yet; just the resilient skeleton.
 - [ ] **F0.7** 🔷 Skills + repo setup — add the two marketplaces, run the security auditor, commit vetted skills to `.claude/skills/`, and create starter `SKILL.md` stubs for the crypto-domain skills (`coinglass-v4`, `hyperliquid-data`, `exchange-websockets`, `screener-engine`, `liquidation-heatmap`, `agent-runtime`, `i18n-ru-en`, `trading-security`).
