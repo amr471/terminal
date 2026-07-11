@@ -16,14 +16,14 @@ Single source of truth for build progress. Works with `CLAUDE.md` (the contract)
 
 Tags are guidance, not law: if a "Sonnet" task turns out to be architecture-defining, escalate it; if an "Opus" task is routine, drop it to Sonnet.
 
-**Current position:** ▶ not started — begin at **F0.1**
+**Current position:** ▶ **F0.2** — architecture decision record
 
 ---
 
 ## Phase 0 — Foundations (Day 1, Fable) 🔷
 *The load-bearing decisions and skeletons everything else depends on. Front-loaded so they're done while Fable access lasts.*
 
-- [ ] **F0.1** 🔷 Monorepo scaffold — `/apps`, `/services`, `/packages`, `/docs`; package manager + build orchestrator (pnpm + Turbo), lint/format, CI skeleton, `.env.example`.
+- [x] **F0.1** 🔷 Monorepo scaffold — `/apps`, `/services`, `/packages`, `/docs`; package manager + build orchestrator (pnpm + Turbo), lint/format, CI skeleton, `.env.example`.
 - [ ] **F0.2** 🔷 Architecture decision record → `/docs/architecture.md` — service boundaries, data-flow diagram, Redis topic/channel naming, error/reconnect conventions.
 - [ ] **F0.3** 🔷 Database schema (Postgres + TimescaleDB) → `/docs/schema.md` + migrations — candles, OI, funding, liquidation events, users, alerts, journal, strategies; hypertables + retention policies.
 - [ ] **F0.4** 🔷 Shared foundation in `/packages` — TS type definitions, RU/EN i18n scaffolding, number/date/timezone formatting utilities, user-timezone vs. fixed-NY-clock separation.
