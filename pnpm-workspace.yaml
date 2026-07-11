@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "services/api-gateway"
+  - "services/alert-engine"
+  - "services/telegram-bot"
+  - "packages/*"

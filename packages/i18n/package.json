@@ -1,0 +1,22 @@
+{
+  "name": "@terminal/i18n",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@terminal/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@terminal/eslint-config": "workspace:*",
+    "@terminal/tsconfig": "workspace:*",
+    "eslint": "^9.18.0",
+    "typescript": "^5.7.3"
+  }
+}

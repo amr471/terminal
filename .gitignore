@@ -1,0 +1,29 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# go
+/services/market-data/bin/
+
+# env & secrets — never commit real keys
+.env
+.env.*
+!.env.example
+
+# misc
+.DS_Store
+*.log
+coverage/
