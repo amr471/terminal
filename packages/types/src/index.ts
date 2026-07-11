@@ -1,7 +1,15 @@
 /**
  * @terminal/types — shared type definitions used across web, gateway, and bots.
- * Fleshed out in F0.4; this file establishes the package and a few core shapes.
+ * Source of truth for every cross-service contract; Go/Python mirrors are
+ * generated from these shapes (tooling lands with the first consumer).
  */
+
+export * from './market.js';
+export * from './screener.js';
+export * from './alerts.js';
+export * from './strategy.js';
+export * from './health.js';
+export * from './errors.js';
 
 /** Supported UI/LLM locales (CLAUDE.md §8 — RU/EN from the first commit). */
 export type Locale = 'en' | 'ru';
