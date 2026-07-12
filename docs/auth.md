@@ -37,6 +37,15 @@ All auth endpoints (signup/login/telegram) are rate-limited to 10 req/min per
 IP on top of the gateway's global 100 req/min (trading-security: "Rate-limit
 auth endpoints (GW-2004)").
 
+`/auth/login` additionally has a **per-account** failure lockout
+(`loginThrottle.ts`): 10 failed attempts within 15 minutes for a given email
+locks that email out (GW-2004) regardless of source IP. This closes a gap the
+IP-only limit leaves open — a distributed attacker spreading attempts across
+many IPs never trips the per-IP limit but would still be caught here. Keyed
+by the raw email string (not user id), so behavior is identical whether the
+email belongs to a real account or not, preserving the same
+no-enumeration property as GW-2001 and `verifyPasswordTimingSafe`.
+
 ## OAuth account linking
 
 Both providers write into the existing `oauth_accounts` table

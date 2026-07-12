@@ -14,6 +14,7 @@ import {
   telegramLoginSchema,
 } from './authSchemas.js';
 import { hashPassword, verifyPasswordTimingSafe } from './password.js';
+import { isLoginLocked, recordLoginFailure, clearLoginFailures } from './loginThrottle.js';
 import { issueSession, revokeSession, verifySession, type SessionContext } from './session.js';
 import {
   findUserByEmail,
@@ -102,14 +103,28 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     if (!parsed.success) return sendAppError(reply, new AppError('GW-2008'));
     const { email, password } = parsed.data;
 
+    // Per-account lockout (keyed by the raw email, same as the failure counter below)
+    // guards against distributed brute force that spreads across many IPs to stay
+    // under the flat per-IP rate limit. Checked before touching Postgres/argon2 so a
+    // locked-out attacker can't use response timing to distinguish this from GW-2001.
+    if (await isLoginLocked(redis, email)) {
+      await recordAuditEvent(pool, 'auth.login_failed', null, {
+        method: 'password',
+        reason: 'locked',
+      });
+      return sendAppError(reply, new AppError('GW-2004'));
+    }
+
     const user = await findUserByEmail(pool, email);
     const ok = await verifyPasswordTimingSafe(user?.password_hash, password);
     if (!user || !ok) {
       // Same error for "no such user" and "wrong password" — don't leak which one (GW-2001).
+      await recordLoginFailure(redis, email);
       await recordAuditEvent(pool, 'auth.login_failed', user?.id ?? null, { method: 'password' });
       return sendAppError(reply, new AppError('GW-2001'));
     }
 
+    await clearLoginFailures(redis, email);
     const session = await issueSession(pool, redis, user.id, {
       ...(request.ip !== undefined ? { ip: request.ip } : {}),
       userAgent: request.headers['user-agent'] ?? '',
