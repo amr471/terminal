@@ -63,6 +63,19 @@ Production topology (whether web and gateway share a domain there too, or
 need real CORS) isn't decided yet — out of scope for this task, flag for a
 future ADR when deployment is actually being planned.
 
+**Known issue (2026-07-13): `--experimental-https` currently disabled in
+`apps/web/package.json`'s `dev` script.** On John's machine, mkcert's
+install step (it shells out to `sudo` to trust its local CA) hung with no
+visible password prompt when run nested inside `pnpm` → `turbo` → `next
+dev` — likely a lost TTY through that process chain. The `dev` script
+temporarily drops the flag so `next dev` starts directly on plain
+`http://localhost:3000`, which is enough to verify pages render but means
+the `Secure` session cookie will not set from the signup form until this is
+resolved. Follow-up: install mkcert directly in a plain terminal
+(`brew install mkcert && mkcert -install`, outside the turbo/next process
+tree) so the CA is already trusted before Next ever tries to invoke it, then
+restore `--experimental-https` in the `dev` script.
+
 ## Environment note: the project folder must not contain `#`
 
 Next.js encodes React Server Component module references internally as

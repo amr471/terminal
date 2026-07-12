@@ -18,7 +18,7 @@ Single source of truth for build progress. Works with `CLAUDE.md` (the contract)
 
 Tags are guidance, not law: if a "Sonnet" task turns out to be architecture-defining, escalate it; if an "Opus" task is routine, drop it to Sonnet.
 
-**Current position:** ▶ **P1.2a** — Landing page (P1.2 confirmed 2026-07-13: REST + WS gateway — 33 tests, 0 skip, 0 fail against a real local Postgres+Redis on John's machine, incl. the WS subscribe/publish/receive round trip after a pre-auth message-drop race was found and fixed on his first real run. Sonnet from here, Opus for tagged tasks. Phase-1 list amended at the 2026-07-12 review: +P1.0, +P1.2a landing, +P1.5a live feeds)
+**Current position:** ▶ **P1.3** — Terminal shell (P1.2a confirmed 2026-07-13: bilingual landing page + inline signup, verified end to end on John's machine — 78 tests, 0 skip, 0 fail across every workspace. Sonnet from here, Opus for tagged tasks. Phase-1 list amended at the 2026-07-12 review: +P1.0, +P1.2a landing, +P1.5a live feeds)
 
 ---
 
@@ -43,7 +43,7 @@ _→ After F0.7, Fable's job is done. Everything below runs on Sonnet by default
 - [x] **P1.0** 🟢 Dev environment — `docker-compose` (Postgres+TimescaleDB, Redis), wired to `db/migrate.sh`, seed script, `.env` plumbing, README quick-start. _Added at Phase-0 review: nothing else provides local infra, and P1.1+ can't be tested without it._
 - [x] **P1.1** 🟢 Auth + accounts (sign-up, login, sessions, OAuth).
 - [x] **P1.2** 🟢 `api-gateway` — REST + browser WebSocket gateway wired to Redis.
-- [ ] **P1.2a** 🟢 Landing page — bilingual (RU/EN) SSR marketing page with the registration form inline: sign-up → straight into the terminal (CLAUDE.md §1). SEO meta, design tokens from `@terminal/ui`. _Added at Phase-0 review: an MVP surface per CLAUDE.md §10 that had no task._
+- [x] **P1.2a** 🟢 Landing page — bilingual (RU/EN) SSR marketing page with the registration form inline: sign-up → straight into the terminal (CLAUDE.md §1). SEO meta, design tokens from `@terminal/ui`. _Added at Phase-0 review: an MVP surface per CLAUDE.md §10 that had no task._
 - [ ] **P1.3** 🟢 Terminal shell — left icon rail, dockable/resizable panels, saveable layouts, default view (screener + chart + news).
 - [ ] **P1.4** 🟢 Top status bar — NY time (auto EST/EDT), session strip (Sydney/Tokyo/London/NY) with active session + overlaps, importance indicator, live-news ticker, "next high-impact event" chip. _Ticker + event chip ship with placeholder sources; real data wires in at P1.9/P1.11._
 - [ ] **P1.5** 🟢 Command bar — fuzzy search over symbols + functions (`BTC HEAT`, `AAPL CHART`).

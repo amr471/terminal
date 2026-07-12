@@ -15,8 +15,8 @@
 import { useState, type FormEvent } from 'react';
 import type { Locale } from '@terminal/types';
 import { t } from '@terminal/i18n';
-import { validateSignupInput, type SignupFieldErrors } from '../lib/validateSignup.js';
-import { authErrorMessageKey } from '../lib/authErrorMessage.js';
+import { validateSignupInput, type SignupFieldErrors } from '../lib/validateSignup';
+import { authErrorMessageKey } from '../lib/authErrorMessage';
 
 export interface SignupFormProps {
   locale: Locale;

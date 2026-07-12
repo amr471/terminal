@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { notFound } from 'next/navigation';
 import { isLocale, type Locale } from '@terminal/types';
 import { t, type MessageKey } from '@terminal/i18n';
-import { SignupForm } from '../../components/SignupForm.js';
+import { SignupForm } from '../../components/SignupForm';
 
 interface LandingPageProps {
   params: Promise<{ locale: string }>;
