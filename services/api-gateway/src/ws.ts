@@ -48,84 +48,102 @@ function safeParseEnvelope(message: string): unknown {
 
 export function registerWsRoute(app: FastifyInstance): void {
   app.get('/ws', { websocket: true }, (socket, request) => {
+    const subscriptions = new Map<string, ChannelListener>();
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+    const cleanup = (): void => {
+      if (heartbeat) clearInterval(heartbeat);
+      for (const [channel, listener] of subscriptions) {
+        void unsubscribeChannel(channel, listener);
+      }
+      subscriptions.clear();
+    };
+    socket.on('close', cleanup);
+    socket.on('error', cleanup);
+
+    async function handleMessage(raw: Buffer): Promise<void> {
+      let parsedBody: unknown;
+      try {
+        parsedBody = JSON.parse(raw.toString());
+      } catch {
+        sendJson(socket, { type: 'error', code: 'GW-2008', message: 'Invalid JSON' });
+        return;
+      }
+
+      const result = wsMessageSchema.safeParse(parsedBody);
+      if (!result.success) {
+        sendJson(socket, { type: 'error', code: 'GW-2008', message: 'Invalid message shape' });
+        return;
+      }
+      const { action, channels } = result.data;
+
+      for (const channel of channels) {
+        if (!parseMdChannel(channel)) {
+          sendJson(socket, {
+            type: 'error',
+            code: 'GW-2008',
+            channel,
+            message: 'Unknown or malformed channel',
+          });
+          continue;
+        }
+
+        if (action === 'subscribe') {
+          if (subscriptions.has(channel)) {
+            sendJson(socket, { type: 'subscribed', channel });
+            continue;
+          }
+          const listener: ChannelListener = (message) => {
+            sendJson(socket, { type: 'md', channel, envelope: safeParseEnvelope(message) });
+          };
+          subscriptions.set(channel, listener);
+          await subscribeChannel(channel, listener);
+          sendJson(socket, { type: 'subscribed', channel });
+        } else {
+          const listener = subscriptions.get(channel);
+          if (listener) {
+            subscriptions.delete(channel);
+            await unsubscribeChannel(channel, listener);
+          }
+          sendJson(socket, { type: 'unsubscribed', channel });
+        }
+      }
+    }
+
+    // Auth is async (a DB round trip via resolveSession), but a client can send
+    // its first `subscribe` frame the instant it sees `open` — before that
+    // promise settles. `ws` does not queue 'message' events for a socket with
+    // no listener attached yet; it drops them. So the listener goes on
+    // synchronously, right now, and queues anything that arrives pre-auth
+    // rather than processing it inline. Found via a real WS test run against
+    // live Redis (sandbox skip-tests never exercise this race).
+    const preAuthQueue: Buffer[] = [];
+    let authorized = false;
+
+    socket.on('message', (raw: Buffer) => {
+      if (!authorized) {
+        preAuthQueue.push(raw);
+        return;
+      }
+      void handleMessage(raw);
+    });
+
     void (async () => {
       const session = await resolveSession(request);
       if (!session) {
         socket.close(4001, 'unauthorized');
         return;
       }
+      authorized = true;
 
-      const subscriptions = new Map<string, ChannelListener>();
-
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         if (socket.readyState === socket.OPEN) socket.ping();
       }, HEARTBEAT_MS);
 
-      const cleanup = (): void => {
-        clearInterval(heartbeat);
-        for (const [channel, listener] of subscriptions) {
-          void unsubscribeChannel(channel, listener);
-        }
-        subscriptions.clear();
-      };
-
-      socket.on('close', cleanup);
-      socket.on('error', cleanup);
-
-      socket.on('message', (raw: Buffer) => {
-        void (async () => {
-          let parsedBody: unknown;
-          try {
-            parsedBody = JSON.parse(raw.toString());
-          } catch {
-            sendJson(socket, { type: 'error', code: 'GW-2008', message: 'Invalid JSON' });
-            return;
-          }
-
-          const result = wsMessageSchema.safeParse(parsedBody);
-          if (!result.success) {
-            sendJson(socket, {
-              type: 'error',
-              code: 'GW-2008',
-              message: 'Invalid message shape',
-            });
-            return;
-          }
-          const { action, channels } = result.data;
-
-          for (const channel of channels) {
-            if (!parseMdChannel(channel)) {
-              sendJson(socket, {
-                type: 'error',
-                code: 'GW-2008',
-                channel,
-                message: 'Unknown or malformed channel',
-              });
-              continue;
-            }
-
-            if (action === 'subscribe') {
-              if (subscriptions.has(channel)) {
-                sendJson(socket, { type: 'subscribed', channel });
-                continue;
-              }
-              const listener: ChannelListener = (message) => {
-                sendJson(socket, { type: 'md', channel, envelope: safeParseEnvelope(message) });
-              };
-              subscriptions.set(channel, listener);
-              await subscribeChannel(channel, listener);
-              sendJson(socket, { type: 'subscribed', channel });
-            } else {
-              const listener = subscriptions.get(channel);
-              if (listener) {
-                subscriptions.delete(channel);
-                await unsubscribeChannel(channel, listener);
-              }
-              sendJson(socket, { type: 'unsubscribed', channel });
-            }
-          }
-        })();
-      });
+      const queued = preAuthQueue.splice(0, preAuthQueue.length);
+      for (const raw of queued) {
+        await handleMessage(raw);
+      }
     })();
   });
 }
