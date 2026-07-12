@@ -18,7 +18,7 @@ Single source of truth for build progress. Works with `CLAUDE.md` (the contract)
 
 Tags are guidance, not law: if a "Sonnet" task turns out to be architecture-defining, escalate it; if an "Opus" task is routine, drop it to Sonnet.
 
-**Current position:** ▶ **P1.3** — Terminal shell (P1.2a confirmed 2026-07-13: bilingual landing page + inline signup, verified end to end on John's machine — 78 tests, 0 skip, 0 fail across every workspace. Sonnet from here, Opus for tagged tasks. Phase-1 list amended at the 2026-07-12 review: +P1.0, +P1.2a landing, +P1.5a live feeds)
+**Current position:** ▶ **P1.2b** — Landing page visual polish (P1.3 confirmed 2026-07-13: icon rail, resizable/saveable workspace, session-gated terminal route — 96 tests, 0 skip, 0 fail across every workspace on John's machine, including all 7 new `/layouts/default` tests against real Postgres. **Deliberately taken out of sequence** — John chose to do P1.2b before P1.3a. Sonnet from here, Opus for tagged tasks. Phase-1 list amended at the 2026-07-12 review: +P1.0, +P1.2a landing, +P1.5a live feeds. **2026-07-12 feature intake (John):** amended P1.5a/P1.9/P2.2/P2.3; added P1.2b, P1.3a, P1.5b, P1.7b, P1.13a, P1.19; opened Phase 1B — admin panel, mobile+push, stocks/Snowball, IPOs)
 
 ---
 
@@ -44,31 +44,48 @@ _→ After F0.7, Fable's job is done. Everything below runs on Sonnet by default
 - [x] **P1.1** 🟢 Auth + accounts (sign-up, login, sessions, OAuth).
 - [x] **P1.2** 🟢 `api-gateway` — REST + browser WebSocket gateway wired to Redis.
 - [x] **P1.2a** 🟢 Landing page — bilingual (RU/EN) SSR marketing page with the registration form inline: sign-up → straight into the terminal (CLAUDE.md §1). SEO meta, design tokens from `@terminal/ui`. _Added at Phase-0 review: an MVP surface per CLAUDE.md §10 that had no task._
-- [ ] **P1.3** 🟢 Terminal shell — left icon rail, dockable/resizable panels, saveable layouts, default view (screener + chart + news).
+- [ ] **P1.2b** 🟢 Landing page visual polish — smooth transitions/animations, on-scroll motion, refined hero; load the `senior-frontend` skill. _Added 2026-07-12 (John): P1.2a shipped functional-first by design; this is the dedicated design pass._
+- [x] **P1.3** 🟢 Terminal shell — left icon rail, dockable/resizable panels, saveable layouts, default view (screener + chart + news).
+- [ ] **P1.3a** 🟢 Browser-style workspace tabs — multiple named tabs across the top of the terminal; switch/reorder/close, each tab carries its own saved layout, persisted per user. _Extends P1.3; the multi-tab shell every panel lives in._
 - [ ] **P1.4** 🟢 Top status bar — NY time (auto EST/EDT), session strip (Sydney/Tokyo/London/NY) with active session + overlaps, importance indicator, live-news ticker, "next high-impact event" chip. _Ticker + event chip ship with placeholder sources; real data wires in at P1.9/P1.11._
 - [ ] **P1.5** 🟢 Command bar — fuzzy search over symbols + functions (`BTC HEAT`, `AAPL CHART`).
-- [ ] **P1.5a** 🟢 Live exchange feeds — implement Binance/Bybit/OKX `conn.Feed`s (trades, candles, book, funding, OI) on the F0.6 framework; persist hypertables, maintain `instrument_state`, fan out `md.*`. Load the `exchange-websockets` skill. _Added at Phase-0 review: F0.6 built the skeleton feed-less by design; P1.6/P1.8/P1.12/P1.14 all consume live data._
+- [ ] **P1.5a** 🟢 Live exchange feeds — implement Binance/Bybit/OKX `conn.Feed`s (trades, candles, book, funding, OI) on the F0.6 framework; persist hypertables, maintain `instrument_state`, fan out `md.*`. Load the `exchange-websockets` skill. _Added at Phase-0 review: F0.6 built the skeleton feed-less by design; P1.6/P1.8/P1.12/P1.14 all consume live data. The remaining default venues (HyperLiquid, MEXC, BingX, KuCoin, Aster) land via the P1.5b adapter._
+- [ ] **P1.5b** 🟣 Exchange adapter interface + full default venue set — a pluggable `Exchange` adapter contract (symbol mapping, WS/REST quirks, rate limits, health) so adding a venue is one adapter file; ship adapters for **Binance, Bybit, OKX, HyperLiquid, MEXC, BingX, KuCoin, Aster**. _Opus: the abstraction every downstream venue and the consolidated views (P1.7b, P2.2) depend on. Extends P1.5a._
 - [ ] **P1.6** 🟣 Screener query engine — deterministic filter model (`field·operator·value`, AND/OR groups), volume sort, saved screens/presets, real-time updates. _Opus: correctness + throughput._
 - [ ] **P1.7** 🟢 Screener UI — virtualized table, column config, filter builder front-end, export with watermark/referral link.
+- [ ] **P1.7b** 🟢 Consolidated best price + available volume — across all connected venues, per symbol show the best bid/ask and the top-of-book size available at that price, live; scalpboard.io-style real-time scalping view. _Depends on P1.5b (multi-venue top-of-book). Deeper cross-venue spread/arb analysis is P2.2._
 - [ ] **P1.8** 🟢 Charts — integrate charting lib; timeframe switching, indicator drawing hooks (for the agent later).
-- [ ] **P1.9** 🟢 News pipeline — ingest CryptoPanic + CoinGecko + Telegram (MTProto) + Arkham; normalize + dedupe.
+- [ ] **P1.9** 🟢 News pipeline — ingest CryptoPanic + CoinGecko + Telegram (MTProto) + Arkham + exchange listing/delisting announcements; normalize + dedupe. _Listing/delisting items feed the P1.13a alert type._
 - [ ] **P1.10** 🟢 News LLM scoring — relevance/sentiment/asset tagging + "what does this mean for my positions?" (locale-aware).
 - [ ] **P1.11** 🟢 Economic calendar — Trading Economics / FXStreet / Finnhub; events, importance tiers, forecasts, previous/actual; RU sources included.
 - [ ] **P1.12** 🟣 Alert engine — deterministic rule evaluation against the live stream (price/indicator/liq-level/news). _Opus: the evaluation core._
 - [ ] **P1.13** 🟢 Alert delivery — web + Telegram bot.
+- [ ] **P1.13a** 🟢 Listing/delisting alerts — per-exchange listing & delisting notifications with fully user-customizable rules (which venues, new-listing vs delisting, quote-asset filters), delivered web + Telegram (+ mobile push once P1B.2 lands). _Consumes the P1.9 listing/delisting stream; built on the P1.12 engine._
 - [ ] **P1.14** 🟢 Coinglass V4 integration — pull liquidation heatmap + OI/funding; render heatmap (ECharts). _Buy, don't build._
 - [ ] **P1.15** 🟣 Backtesting engine — deterministic runner with fees/slippage/lookahead handling over historical data. _Opus._
 - [ ] **P1.16** 🟣 NL → strategy spec — LLM turns plain-language ideas into a structured spec the engine in P1.15 runs; explain results back. _Opus._
 - [ ] **P1.17** 🟢 Subscriptions + billing — tiers incl. managed-inference tier; BYO Anthropic key handling (encrypted, server-side).
 - [ ] **P1.18** 🟢 Test pass + MVP hardening — coverage on P1.6/P1.12/P1.15/P1.17, error states, empty/loading states, RU/EN QA.
+- [ ] **P1.19** 🟣 Active session management — list a user's active sessions (device, IP, GeoIP location, last-seen), revoke any one, and surface/allow logout of sessions active >24h. _Extends the P1.1 auth/session model; security-sensitive, gets tests before its box is checked._
+
+---
+
+## Phase 1B — Growth & platform surfaces
+
+_Net-new surfaces John prioritized (2026-07-12) to run in parallel with late Phase 1 rather than wait for the endgame. Numbered P1B.x to avoid colliding with the P1.5/P1.5a scheme._
+
+- [ ] **P1B.1** 🟣 Admin panel — registered-user count + growth, currently-online (live WS sessions), country breakdown (GeoIP), signup→activation funnel, per-user lookup/suspend, feature flags; role-gated + audit-logged. _Reads auth (P1.1) + gateway (P1.2) session data._
+- [ ] **P1B.2** 🟣 Mobile apps (iOS + Android) + push — ship the terminal to phones (React Native/Expo or Tauri Mobile reusing the React app) with APNs/FCM push and a **critical-alert channel that wakes the user at night / bypasses Do Not Disturb** (iOS Critical Alerts entitlement, Android alarm/full-screen category). _Push wires into P1.13/P1.13a delivery; the entitlement approval has lead time — start early._
+- [ ] **P1B.3** 🟢 Stocks surface (Snowball-style) — equities quotes, watchlists, fundamentals and a stock screener paralleling the crypto one; reuse the P1.6/P1.7 engine + UI where possible. _New market-data source; feeds P1B.4._
+- [ ] **P1B.4** 🟢 IPO calendar + news — upcoming IPOs (date, venue, price range, status) plus related news, surfaced in the calendar + news pipelines. _Depends on P1B.3's stock data source; extends P1.9/P1.11._
 
 ---
 
 ## Phase 2 — Market-intelligence edge
 
 - [ ] **P2.1** 🟣 Order-book aggregation — multi-exchange websockets, normalized L2 books, throughput-safe fan-out. _Opus._
-- [ ] **P2.2** 🟣 Cross-exchange spreads / arbitrage / inefficiency detection. _Opus._
-- [ ] **P2.3** 🟣 Real HyperLiquid liquidation map — pull on-chain positions, cluster wallets, separate whales vs. retail, plot real liq/stop levels; show side-by-side with the formula map. _Opus — your differentiator._
+- [ ] **P2.2** 🟣 Cross-exchange spreads / arbitrage / inefficiency detection — plus a clean, legible price-discrepancy visualization across venues (who's high/low, spread size and direction, at a glance). _Opus. The view consumes P1.5b venues + P1.7b best-price._
+- [ ] **P2.3** 🟣 Real HyperLiquid liquidation map — pull on-chain positions, cluster wallets, separate whales vs. retail, plot real liq/stop levels; show side-by-side with the formula map. Let users import or manually add their own wallet addresses to track their own positions and liq levels on the map. _Opus — your differentiator._
 - [ ] **P2.4** 🟢 Telegram mini-app — condensed alerts view (login → all alerts → manage), Telegram Web App SDK.
 - [ ] **P2.5** 🟢 Trader's journal — auto-log from connected APIs + manual entries.
 - [ ] **P2.6** 🟢 Journal LLM insights — patterns, mistakes, auto-tagging.
