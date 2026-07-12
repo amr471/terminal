@@ -10,6 +10,7 @@ import websocket from '@fastify/websocket';
 import { config } from './config.js';
 import { registerAuthRoutes } from './authRoutes.js';
 import { registerMarketRoutes } from './marketRoutes.js';
+import { registerLayoutRoutes } from './layoutRoutes.js';
 import { registerWsRoute } from './ws.js';
 import { pool } from './db.js';
 import { redis } from './redis.js';
@@ -46,6 +47,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   registerAuthRoutes(app);
   registerMarketRoutes(app);
+  registerLayoutRoutes(app);
   registerWsRoute(app);
 
   app.setErrorHandler((err, _request, reply) => {

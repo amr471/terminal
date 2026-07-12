@@ -7,12 +7,14 @@
  * so the gateway's Secure session cookie round-trips correctly (see
  * next.config.mjs's comment for why that matters).
  *
- * The terminal itself doesn't exist yet (P1.3+), so "straight into the
- * terminal" is currently an inline success state rather than a redirect to
- * a route that would 404. Swap the success branch for a redirect to
- * `/${locale}/terminal` once P1.3 ships.
+ * On success, redirects straight to `/${locale}/terminal` (P1.3) rather
+ * than showing an inline message — the terminal route now exists and is
+ * session-gated on that same cookie, which the browser already has by the
+ * time this redirect fires (the fetch response's Set-Cookie is applied
+ * before this callback runs).
  */
 import { useState, type FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import type { Locale } from '@terminal/types';
 import { t } from '@terminal/i18n';
 import { validateSignupInput, type SignupFieldErrors } from '../lib/validateSignup';
@@ -33,6 +35,7 @@ function isSignupErrorBody(value: unknown): value is SignupErrorBody {
 }
 
 export function SignupForm({ locale }: SignupFormProps) {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -69,19 +72,11 @@ export function SignupForm({ locale }: SignupFormProps) {
       }
 
       setStatus('success');
+      router.push(`/${locale}/terminal`);
     } catch {
       setFormError(t(locale, 'error.generic'));
       setStatus('error');
     }
-  }
-
-  if (status === 'success') {
-    return (
-      <div className="landing__signup-success" role="status">
-        <p className="landing__signup-success-title">{t(locale, 'landing.signup.success_title')}</p>
-        <p>{t(locale, 'landing.signup.success_body', { email })}</p>
-      </div>
-    );
   }
 
   return (

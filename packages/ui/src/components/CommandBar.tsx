@@ -1,7 +1,12 @@
+'use client';
+
 /**
  * Command bar skeleton (CLAUDE.md §5): single input, `SYMBOL FUNCTION`
  * grammar (BTC HEAT · AAPL CHART). Deterministic parse now; fuzzy palette
  * over symbols + functions lands at P1.5.
+ *
+ * 'use client': uses useState. Never actually exercised inside a real
+ * Next.js render tree until P1.3's terminal shell — added now that it is.
  */
 import { useState } from 'react';
 import type { Locale } from '@terminal/types';

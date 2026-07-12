@@ -96,11 +96,15 @@ export const en = {
   'landing.signup_heading': 'Create your free account',
   'landing.signup.display_name': 'Name (optional)',
   'landing.signup.submit': 'Create free account',
-  'landing.signup.success_title': "You're in.",
-  'landing.signup.success_body':
-    'Account created for {email}. The terminal is still in development — we will let you know the moment it opens.',
   'landing.signup.error_invalid_email': 'Enter a valid email address.',
   'landing.signup.error_password_too_short': 'Use at least 10 characters.',
+
+  // Terminal shell (P1.3)
+  'terminal.command_placeholder': 'e.g. BTC HEAT',
+  'terminal.resize_handle': 'Resize panel',
+  'terminal.panel.screener_body': 'Real-time screener is coming soon.',
+  'terminal.panel.chart_body': 'Charts are coming soon.',
+  'terminal.panel.news_body': 'News feed is coming soon.',
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;

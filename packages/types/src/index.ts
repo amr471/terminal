@@ -10,6 +10,7 @@ export * from './alerts.js';
 export * from './strategy.js';
 export * from './health.js';
 export * from './errors.js';
+export * from './layout.js';
 
 /** Supported UI/LLM locales (CLAUDE.md §8 — RU/EN from the first commit). */
 export type Locale = 'en' | 'ru';

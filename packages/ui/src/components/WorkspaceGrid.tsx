@@ -1,7 +1,10 @@
 /**
- * Workspace grid primitives — CSS-grid shell for the dockable multi-panel
- * workspace. Static template now; drag/resize/save-layout logic lands at
- * P1.3 (layouts persist via `layouts.definition`).
+ * Workspace grid primitives — CSS-grid shell for simple static multi-panel
+ * layouts. The terminal shell's interactive, resizable/saveable workspace
+ * (P1.3) turned out cleaner as flexbox (ResizableColumns.tsx) — a general
+ * resizable CSS-grid needs synchronized gutter tracks in both dimensions,
+ * more machinery than two nested flex axes for the same result. This stays
+ * available for any future layout that's genuinely static.
  */
 import type { ReactNode } from 'react';
 

@@ -151,6 +151,16 @@ adding CORS to the gateway. See `/docs/landing-page.md` for the locale
 routing approach, the HTTPS proxy rationale, and current test-coverage
 scope.
 
+### 6.11 Terminal shell (P1.3, implemented)
+
+Session-gated `/[locale]/terminal`: top status bar, left icon rail, command
+bar, and a resizable/saveable panel grid (`layouts` table, one default
+layout per user) with placeholder Screener/Chart/News panels ahead of those
+features landing at P1.6–P1.10. See `/docs/terminal-shell.md` for the
+layout data model (columns of stacked panels, not a general drag-and-drop
+grid), the resize implementation, the `/layouts/default` REST surface, and
+the session-gating approach.
+
 ---
 
 ## 7. Data sources (verify current terms/pricing before wiring)

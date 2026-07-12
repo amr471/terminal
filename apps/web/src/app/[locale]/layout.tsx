@@ -6,6 +6,7 @@ import { t } from '@terminal/i18n';
 import '@terminal/ui/tokens.css';
 import '@terminal/ui/terminal.css';
 import './landing.css';
+import './terminal/terminal-shell.css';
 
 interface LocaleLayoutProps {
   children: ReactNode;

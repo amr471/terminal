@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { color, toCssVariables, renderCss } from './tokens.js';
 import { decDirection } from './direction.js';
 import { parseCommand } from './command.js';
+import { pixelDeltaToFr, resizeTracks, tracksToCssTemplate } from './resize.js';
 
 // ── WCAG contrast verification (design-token contract) ───────────────────────
 
@@ -94,4 +95,37 @@ test('parseCommand: rejects garbage', () => {
   assert.equal(parseCommand('BTC HEAT NOW'), null);
   assert.equal(parseCommand('BTC NOPE'), null);
   assert.equal(parseCommand('!!! HEAT'), null);
+});
+
+// ── resizable terminal shell (P1.3) ──────────────────────────────────────────
+
+test('pixelDeltaToFr: converts a pixel drag to a proportional fr delta', () => {
+  // 100px of a 1000px container, 2 total fr -> 0.2fr
+  assert.equal(pixelDeltaToFr(100, 1000, 2), 0.2);
+  assert.equal(pixelDeltaToFr(-100, 1000, 2), -0.2);
+  assert.equal(pixelDeltaToFr(100, 0, 2), 0); // guards zero-size container
+});
+
+test('resizeTracks: takes from one neighbor and gives to the other, total unchanged', () => {
+  const next = resizeTracks([1, 1], 0, 0.3);
+  assert.deepEqual(next, [1.3, 0.7]);
+  assert.equal(next[0]! + next[1]!, 2);
+});
+
+test('resizeTracks: rejects (no partial clamp) once either side would cross the floor', () => {
+  // Track 1 starts at 0.2 (the floor); shrinking it further should be a no-op,
+  // not a clamp that sticks at the floor while the pointer keeps moving.
+  const tracks = [1.8, 0.2];
+  const next = resizeTracks(tracks, 0, 0.05, 0.2);
+  assert.deepEqual(next, tracks);
+});
+
+test('resizeTracks: out-of-range boundary index is a no-op', () => {
+  assert.deepEqual(resizeTracks([1, 1, 1], -1, 0.1), [1, 1, 1]);
+  assert.deepEqual(resizeTracks([1, 1, 1], 2, 0.1), [1, 1, 1]);
+});
+
+test('tracksToCssTemplate: renders fr arrays as CSS grid track lists', () => {
+  assert.equal(tracksToCssTemplate([1, 1]), '1fr 1fr');
+  assert.equal(tracksToCssTemplate([3, 1, 1]), '3fr 1fr 1fr');
 });

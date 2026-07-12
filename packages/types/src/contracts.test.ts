@@ -11,6 +11,10 @@ import {
   worstState,
   isErrorCode,
   MAX_FILTER_NODES,
+  validateLayoutDefinition,
+  isValidLayoutDefinition,
+  defaultLayoutDefinition,
+  MAX_LAYOUT_COLUMNS,
   type FilterGroup,
   type Envelope,
   type TradePayload,
@@ -151,4 +155,40 @@ test('worstState aggregates in severity order', () => {
 test('error codes are stable and guarded', () => {
   assert.equal(isErrorCode('MD-1001'), true);
   assert.equal(isErrorCode('XX-9999'), false);
+});
+
+test('the default layout (screener + chart + news) is itself valid', () => {
+  assert.equal(isValidLayoutDefinition(defaultLayoutDefinition()), true);
+});
+
+test('layout definition validation rejects malformed shapes', () => {
+  assert.ok(validateLayoutDefinition(null).length > 0);
+  assert.ok(validateLayoutDefinition({ version: 2, columns: [] }).length > 0);
+  assert.ok(validateLayoutDefinition({ version: 1, columns: [] }).length > 0); // empty
+  assert.ok(
+    validateLayoutDefinition({
+      version: 1,
+      columns: [{ size: 1, panels: [{ kind: 'nope', size: 1 }] }],
+    }).length > 0,
+  );
+  assert.ok(
+    validateLayoutDefinition({
+      version: 1,
+      columns: [{ size: 0, panels: [{ kind: 'screener', size: 1 }] }],
+    }).length > 0,
+  ); // size below MIN_TRACK_SIZE_FR
+  assert.ok(
+    validateLayoutDefinition({ version: 1, columns: [{ size: 1, panels: [] }] }).length > 0,
+  ); // empty panels
+});
+
+test('layout definition validation enforces the column budget (hostile input)', () => {
+  const tooWide = {
+    version: 1,
+    columns: Array.from({ length: MAX_LAYOUT_COLUMNS + 1 }, () => ({
+      size: 1,
+      panels: [{ kind: 'screener', size: 1 }],
+    })),
+  };
+  assert.ok(validateLayoutDefinition(tooWide).length > 0);
 });

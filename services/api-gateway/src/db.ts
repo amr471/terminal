@@ -1,7 +1,8 @@
 /**
  * Postgres pool for api-gateway. Connects as svc_api_gateway (ADR-005 single
  * writer) — this process may only write users/oauth_accounts/sessions/
- * subscriptions/api_keys/audit_log; every other table is read-only to it.
+ * subscriptions/api_keys/audit_log/screens/layouts/journal_entries; every
+ * other table is read-only to it.
  */
 import pg from 'pg';
 import { config } from './config.js';

@@ -90,9 +90,13 @@ export const ru: Catalog = {
   'landing.signup_heading': 'Создайте бесплатный аккаунт',
   'landing.signup.display_name': 'Имя (необязательно)',
   'landing.signup.submit': 'Создать бесплатный аккаунт',
-  'landing.signup.success_title': 'Готово.',
-  'landing.signup.success_body':
-    'Аккаунт создан для {email}. Терминал ещё в разработке — мы сообщим, как только он откроется.',
   'landing.signup.error_invalid_email': 'Введите корректный email.',
   'landing.signup.error_password_too_short': 'Минимум 10 символов.',
+
+  // Terminal shell (P1.3)
+  'terminal.command_placeholder': 'например, BTC HEAT',
+  'terminal.resize_handle': 'Изменить размер панели',
+  'terminal.panel.screener_body': 'Скринер в реальном времени скоро появится.',
+  'terminal.panel.chart_body': 'Графики скоро появятся.',
+  'terminal.panel.news_body': 'Лента новостей скоро появится.',
 };

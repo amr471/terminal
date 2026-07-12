@@ -21,6 +21,7 @@ export const ERROR_CODES = {
   'GW-2007': 'OAuth verification failed',
   'GW-2008': 'Invalid request payload',
   'GW-2009': 'Internal error',
+  'GW-2010': 'Invalid layout definition',
   // quant
   'QT-3001': 'Backtest failed',
   'QT-3002': 'Insufficient historical data for range',

@@ -16,6 +16,7 @@ const STATUS_BY_CODE: Partial<Record<ErrorCode, number>> = {
   'GW-2007': 401,
   'GW-2008': 400,
   'GW-2009': 500,
+  'GW-2010': 400,
 };
 
 export class AppError extends Error {
