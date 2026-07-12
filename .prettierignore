@@ -6,3 +6,5 @@ pnpm-lock.yaml
 services/market-data
 services/quant
 services/ai
+# Vendored third-party skill content (F0.7) — not ours to reformat.
+.claude/skills
