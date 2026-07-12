@@ -164,6 +164,7 @@ Skills are on-demand capability packages (`SKILL.md` + optional scripts). Projec
 - **Security-audit every third-party skill before committing it** — this repo will eventually touch exchange keys. Run a skill security scan and read the `SKILL.md` before it goes in `.claude/skills/`.
 - **Load `frontend-design` before building any UI**, so the Bloomberg aesthetic stays distinctive rather than defaulting to generic.
 - A few crypto-domain skills (Coinglass V4, HyperLiquid data, the screener query model, the liquidation-heatmap formula) won't exist on any marketplace — author those locally as the project matures.
+- **If a task would benefit from a skill that isn't installed** — any domain: languages, trading, design, testing — name it in the task plan and ask John to add it. He installs skills on request; don't improvise around a missing skill. (Go work: the full `golang-*` suite is installed; start from `golang-how-to`.)
 
 ---
 
