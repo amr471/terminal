@@ -5,7 +5,7 @@
  * (trading-security: "audit events to audit_log — meta must be secret-free").
  */
 import { randomBytes } from 'node:crypto';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { negotiateLocale } from '@terminal/i18n';
 import {
   signupSchema,
@@ -15,7 +15,8 @@ import {
 } from './authSchemas.js';
 import { hashPassword, verifyPasswordTimingSafe } from './password.js';
 import { isLoginLocked, recordLoginFailure, clearLoginFailures } from './loginThrottle.js';
-import { issueSession, revokeSession, verifySession, type SessionContext } from './session.js';
+import { issueSession, revokeSession, verifySession } from './session.js';
+import { SESSION_COOKIE, readSessionToken, requireSession } from './sessionAuth.js';
 import {
   findUserByEmail,
   createUserWithPassword,
@@ -30,7 +31,6 @@ import { config, SESSION_TTL_MS } from './config.js';
 import { pool } from './db.js';
 import { redis } from './redis.js';
 
-const SESSION_COOKIE = 'terminal_session';
 const OAUTH_STATE_TTL_SECONDS = 600; // 10 minutes to complete the OAuth round trip
 const AUTH_RATE_LIMIT = { max: 10, timeWindow: '1 minute' };
 
@@ -47,27 +47,6 @@ function setSessionCookie(reply: FastifyReply, token: string, expiresAt: Date): 
 
 function clearSessionCookie(reply: FastifyReply): void {
   reply.clearCookie(SESSION_COOKIE, { path: '/' });
-}
-
-/** Unsigns the session cookie, if present and valid. Returns the raw bearer token. */
-function readSessionToken(request: FastifyRequest): string | null {
-  const raw = request.cookies[SESSION_COOKIE];
-  if (!raw) return null;
-  const result = request.unsignCookie(raw);
-  return result.valid ? result.value : null;
-}
-
-async function requireSession(
-  request: FastifyRequest,
-  reply: FastifyReply,
-): Promise<SessionContext | null> {
-  const token = readSessionToken(request);
-  const session = token ? await verifySession(pool, redis, token) : null;
-  if (!session) {
-    sendAppError(reply, new AppError('GW-2002'));
-    return null;
-  }
-  return session;
 }
 
 export function registerAuthRoutes(app: FastifyInstance): void {
@@ -253,5 +232,5 @@ export function registerAuthRoutes(app: FastifyInstance): void {
   });
 }
 
-// Re-exported for tests that need the session TTL without importing config directly.
+// Re-exported for tests that need these without importing config.js/sessionAuth.js directly.
 export { SESSION_TTL_MS, SESSION_COOKIE };

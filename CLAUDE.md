@@ -131,6 +131,16 @@ tokens (not JWT), single `oauth_accounts` table for both providers. See
 `/docs/auth.md` for the session model, endpoint list, and account-linking
 rules.
 
+### 6.9 Gateway REST + WS (P1.2, implemented)
+
+`api-gateway` exposes a single authenticated `/ws` endpoint (session cookie,
+same as REST) that browsers subscribe/unsubscribe on by `md.*` channel name
+— never arbitrary Redis channels or `evt.*` streams directly. A REST
+snapshot endpoint (`/md/snapshot/:exchange/:symbol`) gives first-paint state
+from the same cache keys market-data (P1.5a) will populate. See
+`/docs/gateway-ws.md` for the wire protocol, auth/backpressure/heartbeat
+behavior, and current known-empty state until P1.5a lands.
+
 ---
 
 ## 7. Data sources (verify current terms/pricing before wiring)

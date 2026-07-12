@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { buildApp } from './app.js';
 import { pool } from './db.js';
 import { redis } from './redis.js';
+import { closeSubscriber } from './pubsub.js';
 
 async function servicesReachable(): Promise<boolean> {
   try {
@@ -152,5 +153,10 @@ after(async () => {
     await pool.query(`DELETE FROM users WHERE email LIKE 'app-test-%@example.invalid'`);
   }
   await pool.end().catch(() => undefined);
+  // buildApp() pulls in ws.ts -> pubsub.ts, which opens its own dedicated Redis
+  // subscriber connection at module load time (independent of the shared `redis`
+  // client below) — must be closed explicitly or the test process hangs on a
+  // connection that keeps retrying forever when Postgres/Redis aren't reachable.
+  closeSubscriber();
   redis.disconnect();
 });
