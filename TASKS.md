@@ -18,7 +18,7 @@ Single source of truth for build progress. Works with `CLAUDE.md` (the contract)
 
 Tags are guidance, not law: if a "Sonnet" task turns out to be architecture-defining, escalate it; if an "Opus" task is routine, drop it to Sonnet.
 
-**Current position:** ▶ **P1.1** — auth + accounts (P1.0 confirmed 2026-07-12: docker-compose up/migrate/seed + lint/build/test all green on John's machine. Sonnet from here, Opus for tagged tasks. Phase-1 list amended at the 2026-07-12 review: +P1.0, +P1.2a landing, +P1.5a live feeds)
+**Current position:** ▶ **P1.2** — `api-gateway` REST + WS gateway (P1.1 confirmed 2026-07-13: full auth test suite — 22 tests incl. 4 new timing-safety tests — green against a real local Postgres+Redis on John's machine, 0 fail. Sonnet from here, Opus for tagged tasks. Phase-1 list amended at the 2026-07-12 review: +P1.0, +P1.2a landing, +P1.5a live feeds)
 
 ---
 
@@ -41,7 +41,7 @@ _→ After F0.7, Fable's job is done. Everything below runs on Sonnet by default
 ## Phase 1 — MVP ("AI research terminal", no live money)
 
 - [x] **P1.0** 🟢 Dev environment — `docker-compose` (Postgres+TimescaleDB, Redis), wired to `db/migrate.sh`, seed script, `.env` plumbing, README quick-start. _Added at Phase-0 review: nothing else provides local infra, and P1.1+ can't be tested without it._
-- [ ] **P1.1** 🟢 Auth + accounts (sign-up, login, sessions, OAuth).
+- [x] **P1.1** 🟢 Auth + accounts (sign-up, login, sessions, OAuth).
 - [ ] **P1.2** 🟢 `api-gateway` — REST + browser WebSocket gateway wired to Redis.
 - [ ] **P1.2a** 🟢 Landing page — bilingual (RU/EN) SSR marketing page with the registration form inline: sign-up → straight into the terminal (CLAUDE.md §1). SEO meta, design tokens from `@terminal/ui`. _Added at Phase-0 review: an MVP surface per CLAUDE.md §10 that had no task._
 - [ ] **P1.3** 🟢 Terminal shell — left icon rail, dockable/resizable panels, saveable layouts, default view (screener + chart + news).
