@@ -13,7 +13,7 @@ import {
   googleCallbackSchema,
   telegramLoginSchema,
 } from './authSchemas.js';
-import { hashPassword, verifyPassword } from './password.js';
+import { hashPassword, verifyPasswordTimingSafe } from './password.js';
 import { issueSession, revokeSession, verifySession, type SessionContext } from './session.js';
 import {
   findUserByEmail,
@@ -103,7 +103,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     const { email, password } = parsed.data;
 
     const user = await findUserByEmail(pool, email);
-    const ok = user?.password_hash ? await verifyPassword(user.password_hash, password) : false;
+    const ok = await verifyPasswordTimingSafe(user?.password_hash, password);
     if (!user || !ok) {
       // Same error for "no such user" and "wrong password" — don't leak which one (GW-2001).
       await recordAuditEvent(pool, 'auth.login_failed', user?.id ?? null, { method: 'password' });
