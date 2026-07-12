@@ -18,7 +18,7 @@ Single source of truth for build progress. Works with `CLAUDE.md` (the contract)
 
 Tags are guidance, not law: if a "Sonnet" task turns out to be architecture-defining, escalate it; if an "Opus" task is routine, drop it to Sonnet.
 
-**Current position:** ▶ **P1.2b** — Landing page visual polish (P1.3 confirmed 2026-07-13: icon rail, resizable/saveable workspace, session-gated terminal route — 96 tests, 0 skip, 0 fail across every workspace on John's machine, including all 7 new `/layouts/default` tests against real Postgres. **Deliberately taken out of sequence** — John chose to do P1.2b before P1.3a. Sonnet from here, Opus for tagged tasks. Phase-1 list amended at the 2026-07-12 review: +P1.0, +P1.2a landing, +P1.5a live feeds. **2026-07-12 feature intake (John):** amended P1.5a/P1.9/P2.2/P2.3; added P1.2b, P1.3a, P1.5b, P1.7b, P1.13a, P1.19; opened Phase 1B — admin panel, mobile+push, stocks/Snowball, IPOs)
+**Current position:** ▶ **P1.3a** — Browser-style workspace tabs (P1.2b confirmed 2026-07-13: scroll-reveal, hero glow/cursor accent, hover micro-interactions, `prefers-reduced-motion` respected — visual-only task, no new automated tests, verified by John looking at it. His reaction: "I don't like it, but it'll do for now, then we'll coordinate the landing page" — accepted as MVP-sufficient, but landing-page visuals need his direct steer next time, not another unprompted pass; see feedback memory. Sonnet from here, Opus for tagged tasks. Phase-1 list amended at the 2026-07-12 review: +P1.0, +P1.2a landing, +P1.5a live feeds. **2026-07-12 feature intake (John):** amended P1.5a/P1.9/P2.2/P2.3; added P1.2b, P1.3a, P1.5b, P1.7b, P1.13a, P1.19; opened Phase 1B — admin panel, mobile+push, stocks/Snowball, IPOs)
 
 ---
 
@@ -44,7 +44,7 @@ _→ After F0.7, Fable's job is done. Everything below runs on Sonnet by default
 - [x] **P1.1** 🟢 Auth + accounts (sign-up, login, sessions, OAuth).
 - [x] **P1.2** 🟢 `api-gateway` — REST + browser WebSocket gateway wired to Redis.
 - [x] **P1.2a** 🟢 Landing page — bilingual (RU/EN) SSR marketing page with the registration form inline: sign-up → straight into the terminal (CLAUDE.md §1). SEO meta, design tokens from `@terminal/ui`. _Added at Phase-0 review: an MVP surface per CLAUDE.md §10 that had no task._
-- [ ] **P1.2b** 🟢 Landing page visual polish — smooth transitions/animations, on-scroll motion, refined hero; load the `senior-frontend` skill. _Added 2026-07-12 (John): P1.2a shipped functional-first by design; this is the dedicated design pass._
+- [x] **P1.2b** 🟢 Landing page visual polish — smooth transitions/animations, on-scroll motion, refined hero; load the `senior-frontend` skill. _Added 2026-07-12 (John): P1.2a shipped functional-first by design; this is the dedicated design pass._
 - [x] **P1.3** 🟢 Terminal shell — left icon rail, dockable/resizable panels, saveable layouts, default view (screener + chart + news).
 - [ ] **P1.3a** 🟢 Browser-style workspace tabs — multiple named tabs across the top of the terminal; switch/reorder/close, each tab carries its own saved layout, persisted per user. _Extends P1.3; the multi-tab shell every panel lives in._
 - [ ] **P1.4** 🟢 Top status bar — NY time (auto EST/EDT), session strip (Sydney/Tokyo/London/NY) with active session + overlaps, importance indicator, live-news ticker, "next high-impact event" chip. _Ticker + event chip ship with placeholder sources; real data wires in at P1.9/P1.11._
