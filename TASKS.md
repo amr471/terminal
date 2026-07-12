@@ -16,7 +16,7 @@ Single source of truth for build progress. Works with `CLAUDE.md` (the contract)
 
 Tags are guidance, not law: if a "Sonnet" task turns out to be architecture-defining, escalate it; if an "Opus" task is routine, drop it to Sonnet.
 
-**Current position:** ▶ **F0.7** — skills + repo setup (last Fable task)
+**Current position:** ▶ **P1.1** — auth + accounts (Phase 0 complete 🎉; Sonnet from here, Opus for tagged tasks)
 
 ---
 
@@ -29,7 +29,7 @@ Tags are guidance, not law: if a "Sonnet" task turns out to be architecture-defi
 - [x] **F0.4** 🔷 Shared foundation in `/packages` — TS type definitions, RU/EN i18n scaffolding, number/date/timezone formatting utilities, user-timezone vs. fixed-NY-clock separation.
 - [x] **F0.5** 🔷 Design system (Bloomberg) — load the `frontend-design` skill; define tokens (amber/green/red, mono numerics), base components, layout grid, **top status bar shell**, **command bar skeleton**. Keep §5 of `CLAUDE.md` as the reference.
 - [x] **F0.6** 🔷 `market-data-service` (Go) skeleton — connection manager, normalization layer, reconnection + health-check framework, Redis publisher. No live feeds yet; just the resilient skeleton.
-- [ ] **F0.7** 🔷 Skills + repo setup — add the two marketplaces, run the security auditor, commit vetted skills to `.claude/skills/`, and create starter `SKILL.md` stubs for the crypto-domain skills (`coinglass-v4`, `hyperliquid-data`, `exchange-websockets`, `screener-engine`, `liquidation-heatmap`, `agent-runtime`, `i18n-ru-en`, `trading-security`).
+- [x] **F0.7** 🔷 Skills + repo setup — add the two marketplaces, run the security auditor, commit vetted skills to `.claude/skills/`, and create starter `SKILL.md` stubs for the crypto-domain skills (`coinglass-v4`, `hyperliquid-data`, `exchange-websockets`, `screener-engine`, `liquidation-heatmap`, `agent-runtime`, `i18n-ru-en`, `trading-security`).
 
 *→ After F0.7, Fable's job is done. Everything below runs on Sonnet by default, Opus for the tagged hard parts.*
 
