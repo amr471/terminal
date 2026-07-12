@@ -8,7 +8,7 @@ Project instructions for Claude Code. This file is loaded every session — trea
 
 A **free, Bloomberg-style trading terminal** for crypto and stocks, serving Russian- and English-speaking traders. Two surfaces: a bilingual marketing **landing page** with the registration form inline (sign-up → straight into the terminal), and the **terminal** itself — a dense, dark, multi-panel workspace where news, screener, spreads, liquidation heatmap, calendar, alerts, and journal are all one glance away.
 
-**Prime directive:** Claude/Sonnet 5 is the *brain and the build tool*, never the number-cruncher. Market math (order books, liquidations, spreads, backtests, alert rules) is deterministic code. The LLM handles language: strategy-from-plain-English, news scoring, the journal, and the agent/chat layer. Never route raw market firehoses through an LLM.
+**Prime directive:** Claude/Sonnet 5 is the _brain and the build tool_, never the number-cruncher. Market math (order books, liquidations, spreads, backtests, alert rules) is deterministic code. The LLM handles language: strategy-from-plain-English, news scoring, the journal, and the agent/chat layer. Never route raw market firehoses through an LLM.
 
 ---
 
@@ -64,6 +64,7 @@ Rule of thumb: TypeScript across the app, Go on the hot path, Python for quant +
 **Feel:** dark, dense, professional, keyboard-first. Black/near-black base; high-contrast data; the classic Bloomberg amber as a primary accent, with green/red reserved for up/down and long/short. Monospace for all numbers so columns align. Minimal chrome, maximum data. Every panel earns its space.
 
 **Signature elements to build:**
+
 - **Global command bar** (Bloomberg's hallmark): a single input where the user types a symbol + function and jumps anywhere — e.g. `BTC HEAT`, `AAPL CHART`, `ETH NEWS`. Back it with a command palette (fuzzy search over symbols + functions).
 - **Persistent top status bar:** New York time (auto EST/EDT); a session strip (Sydney / Tokyo / London / New York) with the active session highlighted and overlaps marked; session importance; a scrolling live-news ticker; a "next high-impact event in Xh" chip. This bar is the daily-retention hook.
 - **Dockable multi-panel workspace:** resizable grid, saveable layouts. Default = screener + chart + news.
@@ -77,6 +78,7 @@ Keep it minimal and legible despite the density — this is Bloomberg refined, n
 ## 6. Feature specifications
 
 ### 6.1 Screener (crypto + stocks) — first-class feature
+
 - **Columns:** symbol, price, % change (multi-timeframe), volume, market cap, open interest, funding rate, volatility, spread, and more; all **sortable** (sort by volume is a primary use case).
 - **Custom filter builder:** users compose filters as `field · operator · value`, combinable with AND/OR groups (e.g. `volume > 100M AND funding < 0 AND change_24h < -5%`). Numeric, percentage, and categorical operators.
 - **Saved screens + presets** (e.g. "high-volume losers", "negative funding", "unusual OI").
@@ -85,6 +87,7 @@ Keep it minimal and legible despite the density — this is Bloomberg refined, n
 - Backed by a deterministic query engine over the market-data store — **no LLM in the screener's hot path.** The LLM may translate a natural-language request into a filter definition, which the engine then executes.
 
 ### 6.2 AI agent layer (BYO key)
+
 - Users optionally connect **their own Anthropic API key** (encrypted server-side, never in the browser). Also a managed tier where we supply inference (model token costs before pricing).
 - Agents read site data (news, volumes, OI, etc.), analyze, and can **debate** each other. **One agent = one strategy.**
 - Agents get **chart access** (via the charting lib) to draw indicators, switch timeframes, and attach indicators per the strategy.
@@ -93,28 +96,40 @@ Keep it minimal and legible despite the density — this is Bloomberg refined, n
 - **Always inject the user's locale** into every prompt so output matches their language.
 
 ### 6.3 Liquidation maps (two, kept separate)
+
 - **Formula/Coinglass-style (MVP):** buy from **Coinglass API V4** for launch, or compute from OI + leverage buckets. x=time, y=price, color=estimated liquidation intensity.
 - **Real HyperLiquid map (Phase 2 differentiator):** pull actual on-chain positions from HyperLiquid's public info API, cluster wallets, **separate whales from small traders** so real liquidation/stop levels are visible. Present the two maps side by side — the gap between them is signal.
 
 ### 6.4 News, sessions & economic calendar
+
 - **News parser** aggregating all sources: crypto news APIs, **Telegram** channels (MTProto), **Arkham** on-chain intel, and more; deduped and normalized. LLM tags relevance/sentiment/asset and answers "what does this mean for my positions?"
 - **Sessions:** show the active session; allow pulling up a live stream or news for scheduled meetings.
 - **Economic calendar** (Forex-Factory-style): daily events with session, importance tier, forecasts, previous/actual. Include RU-language sources for the RU market.
 
 ### 6.5 Alerts + Telegram mini-app
+
 - Deterministic **alert engine** (price, indicator, liq-level, news triggers), dispatched to web **and** Telegram.
 - **Telegram mini-app:** condensed view — user logs in, sees all alerts, manages them; alerts also delivered to Telegram.
 
 ### 6.6 Trading / execution (Phase 3)
+
 - Users add **exchange API keys** so an agent can manage assets **at their own risk**. Requires the **Tauri desktop app** — secrets and execution do not belong in a browser.
 - **Guardrails:** position limits, kill-switch, dry-run mode.
 - **Proxies:** provide a vetted pool or let desktop users connect their own (legal review first).
 
 ### 6.7 Journal, marketplace, analytics, export
+
 - **Automatic trader's journal** (auto-log from connected APIs + manual entries); LLM surfaces patterns/mistakes.
 - **Strategy marketplace** (Phase 4): share strategies; **rating from real, verified trading results** (anti-cheat is the hard part — treat as endgame).
 - **Analytics** dashboards (PnL, win rate, drawdown).
 - **Viral export:** shareable cards with watermark/referral links.
+
+### 6.8 Auth & accounts (P1.1, implemented)
+
+Email+password (argon2id) plus Google and Telegram OAuth, opaque session
+tokens (not JWT), single `oauth_accounts` table for both providers. See
+`/docs/auth.md` for the session model, endpoint list, and account-linking
+rules.
 
 ---
 
@@ -177,4 +192,4 @@ Pick the right home for each change; don't put everything in this file (it's loa
 - **Reusable procedural know-how** (how to call an API, a repeatable workflow) → make it a **skill** in `.claude/skills/`, so it loads only when relevant.
 - **A one-off task** (fix this bug, build this component) → just prompt in the Claude Code session; nothing to persist.
 
-Rule of thumb: *contract → CLAUDE.md; detail → /docs; repeatable how-to → skill; one-off → just ask.* When you add a feature, first decide which of these it is, update that home, then implement.
+Rule of thumb: _contract → CLAUDE.md; detail → /docs; repeatable how-to → skill; one-off → just ask._ When you add a feature, first decide which of these it is, update that home, then implement.

@@ -18,6 +18,7 @@ MIGRATIONS=(
   "db/bootstrap/0000_extensions_roles.sql"
   "services/api-gateway/migrations/0001_users_auth.sql"
   "services/api-gateway/migrations/0002_screens_layouts_journal.sql"
+  "services/api-gateway/migrations/0003_users_email_nullable.sql"
   "services/market-data/migrations/0001_hypertables.sql"
   "services/alert-engine/migrations/0001_alerts.sql"
   "services/ai/migrations/0001_strategies.sql"

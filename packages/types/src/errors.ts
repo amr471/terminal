@@ -17,6 +17,10 @@ export const ERROR_CODES = {
   'GW-2003': 'Insufficient subscription tier',
   'GW-2004': 'Rate limit exceeded',
   'GW-2005': 'Invalid screen definition',
+  'GW-2006': 'Email already registered',
+  'GW-2007': 'OAuth verification failed',
+  'GW-2008': 'Invalid request payload',
+  'GW-2009': 'Internal error',
   // quant
   'QT-3001': 'Backtest failed',
   'QT-3002': 'Insufficient historical data for range',
