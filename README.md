@@ -18,11 +18,20 @@ Free, Bloomberg-style trading terminal for crypto and stocks — RU/EN. See `CLA
 
 ## Getting started
 
+Prerequisites: Node ≥22, Docker, a `psql` client on `PATH`.
+
 ```bash
 corepack enable          # provides pnpm
 pnpm install
-pnpm lint && pnpm build && pnpm test
 cp .env.example .env     # fill in locally; never commit
+
+pnpm dev:up               # start Postgres+TimescaleDB & Redis, wait until healthy
+pnpm dev:migrate          # apply db/migrate.sh, then set local svc_* role passwords
+pnpm dev:seed             # load a few dev instruments (db/dev/seed.sql)
+
+pnpm lint && pnpm build && pnpm test
 ```
+
+`pnpm dev:reset` wipes local containers/volumes and rebuilds from scratch (up → migrate → seed). `pnpm dev:down` stops containers without deleting data. See `scripts/dev-env.sh` for what each step does.
 
 TS workspaces run through pnpm + Turbo. Go and Python services use their native toolchains (CI jobs added when each service gets real code).
