@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { isLocale, type Locale } from '@terminal/types';
 import { t, type MessageKey } from '@terminal/i18n';
 import { SignupForm } from '../../components/SignupForm';
+import { ScrollReveal } from '../../components/ScrollReveal';
 
 interface LandingPageProps {
   params: Promise<{ locale: string }>;
@@ -38,6 +39,12 @@ function FeatureCard({
   );
 }
 
+const FEATURES: { titleKey: MessageKey; bodyKey: MessageKey }[] = [
+  { titleKey: 'landing.features.screener_title', bodyKey: 'landing.features.screener_body' },
+  { titleKey: 'landing.features.liq_title', bodyKey: 'landing.features.liq_body' },
+  { titleKey: 'landing.features.ai_title', bodyKey: 'landing.features.ai_body' },
+];
+
 export default async function LandingPage({ params }: LandingPageProps) {
   const { locale: raw } = await params;
   if (!isLocale(raw)) notFound();
@@ -51,7 +58,12 @@ export default async function LandingPage({ params }: LandingPageProps) {
       </header>
 
       <section className="landing__hero">
-        <p className="landing__kicker">{t(locale, 'landing.hero_kicker')}</p>
+        <p className="landing__kicker">
+          {t(locale, 'landing.hero_kicker')}
+          <span className="landing__cursor" aria-hidden="true">
+            _
+          </span>
+        </p>
         <h1 className="landing__title">{t(locale, 'app.tagline')}</h1>
         <p className="landing__subtitle">{t(locale, 'landing.hero_subtitle')}</p>
         <a className="landing__hero-cta" href="#signup">
@@ -62,27 +74,19 @@ export default async function LandingPage({ params }: LandingPageProps) {
       <section className="landing__features" aria-label={t(locale, 'landing.features_heading')}>
         <h2 className="landing__section-heading">{t(locale, 'landing.features_heading')}</h2>
         <div className="landing__feature-grid">
-          <FeatureCard
-            locale={locale}
-            titleKey="landing.features.screener_title"
-            bodyKey="landing.features.screener_body"
-          />
-          <FeatureCard
-            locale={locale}
-            titleKey="landing.features.liq_title"
-            bodyKey="landing.features.liq_body"
-          />
-          <FeatureCard
-            locale={locale}
-            titleKey="landing.features.ai_title"
-            bodyKey="landing.features.ai_body"
-          />
+          {FEATURES.map((feature, i) => (
+            <ScrollReveal key={feature.titleKey} delayMs={i * 100}>
+              <FeatureCard locale={locale} titleKey={feature.titleKey} bodyKey={feature.bodyKey} />
+            </ScrollReveal>
+          ))}
         </div>
       </section>
 
       <section className="landing__signup" id="signup" aria-label={t(locale, 'auth.sign_up')}>
-        <h2 className="landing__section-heading">{t(locale, 'landing.signup_heading')}</h2>
-        <SignupForm locale={locale} />
+        <ScrollReveal>
+          <h2 className="landing__section-heading">{t(locale, 'landing.signup_heading')}</h2>
+          <SignupForm locale={locale} />
+        </ScrollReveal>
       </section>
     </main>
   );
