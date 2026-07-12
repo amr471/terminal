@@ -1,0 +1,211 @@
+/*
+ * Landing page (P1.2a) — built on @terminal/ui's tokens, not a separate
+ * design language. Same dark/amber Bloomberg aesthetic as the terminal
+ * shell (CLAUDE.md §5), just laid out for a marketing page instead of a
+ * dense data grid.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--t-color-surface-base);
+  color: var(--t-color-text-primary);
+  font-family: var(--t-font-sans);
+}
+
+.landing {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── nav ── */
+.landing__nav {
+  width: 100%;
+  max-width: 1040px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--t-space-xl) var(--t-space-xl) 0;
+}
+.landing__logo {
+  font-family: var(--t-font-mono);
+  font-weight: var(--t-font-weight-bold);
+  letter-spacing: 0.12em;
+  color: var(--t-color-accent-amber);
+}
+.landing__locale-switcher {
+  display: flex;
+  gap: var(--t-space-md);
+  font-family: var(--t-font-mono);
+  font-size: var(--t-font-size-label);
+}
+.landing__locale-switcher a {
+  color: var(--t-color-text-secondary);
+  text-decoration: none;
+  padding: var(--t-space-xs) var(--t-space-sm);
+  border-radius: var(--t-radius-sm);
+}
+.landing__locale-switcher a[aria-current='page'] {
+  color: var(--t-color-text-inverse);
+  background: var(--t-color-accent-amber);
+}
+.landing__locale-switcher a:hover {
+  color: var(--t-color-text-primary);
+}
+
+/* ── hero ── */
+.landing__hero {
+  width: 100%;
+  max-width: 720px;
+  text-align: center;
+  padding: var(--t-space-xxl) var(--t-space-xl);
+}
+.landing__kicker {
+  font-family: var(--t-font-mono);
+  font-size: var(--t-font-size-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t-color-text-secondary);
+  margin: 0 0 var(--t-space-lg);
+}
+.landing__title {
+  font-size: 34px;
+  line-height: 1.25;
+  font-weight: var(--t-font-weight-medium);
+  margin: 0 0 var(--t-space-lg);
+}
+.landing__subtitle {
+  font-size: var(--t-font-size-body);
+  line-height: 1.6;
+  color: var(--t-color-text-secondary);
+  margin: 0 0 var(--t-space-xl);
+}
+.landing__hero-cta {
+  display: inline-block;
+  background: var(--t-color-accent-amber);
+  color: var(--t-color-text-inverse);
+  font-weight: var(--t-font-weight-medium);
+  text-decoration: none;
+  padding: var(--t-space-md) var(--t-space-xl);
+  border-radius: var(--t-radius-sm);
+}
+.landing__hero-cta:hover {
+  background: var(--t-color-accent-amber-dim);
+}
+
+/* ── features ── */
+.landing__features {
+  width: 100%;
+  max-width: 1040px;
+  padding: var(--t-space-xxl) var(--t-space-xl);
+}
+.landing__section-heading {
+  font-size: var(--t-font-size-title);
+  font-weight: var(--t-font-weight-medium);
+  text-align: center;
+  margin: 0 0 var(--t-space-xl);
+}
+.landing__feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--t-space-lg);
+}
+.landing__feature-card {
+  background: var(--t-color-surface-panel);
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  padding: var(--t-space-lg);
+}
+.landing__feature-card h3 {
+  margin: 0 0 var(--t-space-sm);
+  font-size: var(--t-font-size-body);
+  font-weight: var(--t-font-weight-medium);
+  color: var(--t-color-accent-amber);
+}
+.landing__feature-card p {
+  margin: 0;
+  font-size: var(--t-font-size-body);
+  line-height: 1.6;
+  color: var(--t-color-text-secondary);
+}
+
+/* ── signup ── */
+.landing__signup {
+  width: 100%;
+  max-width: 420px;
+  padding: 0 var(--t-space-xl) var(--t-space-xxl);
+}
+.landing__signup-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-lg);
+  background: var(--t-color-surface-panel);
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  padding: var(--t-space-xl);
+}
+.landing__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-sm);
+  font-size: var(--t-font-size-body);
+  color: var(--t-color-text-secondary);
+}
+.landing__field input {
+  font: inherit;
+  font-family: var(--t-font-sans);
+  background: var(--t-color-surface-raised);
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  color: var(--t-color-text-primary);
+  padding: var(--t-space-md);
+}
+.landing__field input:focus {
+  outline: none;
+  border-color: var(--t-color-accent-amber);
+}
+.landing__field input[aria-invalid='true'] {
+  border-color: var(--t-color-direction-down);
+}
+.landing__field-error,
+.landing__form-error {
+  color: var(--t-color-direction-down);
+  font-size: var(--t-font-size-label);
+}
+.landing__submit {
+  font: inherit;
+  font-weight: var(--t-font-weight-medium);
+  background: var(--t-color-accent-amber);
+  color: var(--t-color-text-inverse);
+  border: none;
+  border-radius: var(--t-radius-sm);
+  padding: var(--t-space-md);
+  cursor: pointer;
+}
+.landing__submit:hover:not(:disabled) {
+  background: var(--t-color-accent-amber-dim);
+}
+.landing__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.landing__signup-success {
+  background: var(--t-color-surface-panel);
+  border: 1px solid var(--t-color-accent-amber);
+  border-radius: var(--t-radius-sm);
+  padding: var(--t-space-xl);
+  text-align: center;
+}
+.landing__signup-success-title {
+  color: var(--t-color-accent-amber);
+  font-weight: var(--t-font-weight-medium);
+  font-size: var(--t-font-size-title);
+  margin: 0 0 var(--t-space-sm);
+}

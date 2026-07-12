@@ -141,6 +141,16 @@ from the same cache keys market-data (P1.5a) will populate. See
 `/docs/gateway-ws.md` for the wire protocol, auth/backpressure/heartbeat
 behavior, and current known-empty state until P1.5a lands.
 
+### 6.10 Landing page (P1.2a, implemented)
+
+Bilingual (`/en`, `/ru`) SSR marketing page in `apps/web` (Next.js App
+Router) with the registration form inline, posting to the gateway via a
+same-origin rewrite proxy (`next dev --experimental-https` + `/api/*`
+rewrites) so the Secure session cookie round-trips without weakening it or
+adding CORS to the gateway. See `/docs/landing-page.md` for the locale
+routing approach, the HTTPS proxy rationale, and current test-coverage
+scope.
+
 ---
 
 ## 7. Data sources (verify current terms/pricing before wiring)

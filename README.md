@@ -35,3 +35,18 @@ pnpm lint && pnpm build && pnpm test
 `pnpm dev:reset` wipes local containers/volumes and rebuilds from scratch (up → migrate → seed). `pnpm dev:down` stops containers without deleting data. See `scripts/dev-env.sh` for what each step does.
 
 TS workspaces run through pnpm + Turbo. Go and Python services use their native toolchains (CI jobs added when each service gets real code).
+
+### Running the landing page + gateway locally
+
+Two processes, two terminals (after `dev:up`/`dev:migrate` above):
+
+```bash
+pnpm dev:gateway   # api-gateway on :8080
+pnpm dev:web       # Next.js on https://localhost:3000
+```
+
+The web app talks to the gateway through a same-origin proxy, not directly —
+see `docs/landing-page.md` for why. First visit to `https://localhost:3000`
+will show a self-signed-certificate warning unless `mkcert` is installed
+(`brew install mkcert && mkcert -install`); either way, click through and
+the app works.

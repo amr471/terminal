@@ -11,6 +11,22 @@
     },
     "test": {
       "dependsOn": ["build"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "@terminal/web#test": {
+      // @terminal/web's test script (tsc -p tsconfig.test.json, pure-logic
+      // unit tests only — see docs/landing-page.md) never touches `next
+      // build`'s output, so it only needs upstream packages built
+      // (@terminal/i18n's types), not its own "build" task. Deliberately
+      // narrower than the default `test: {dependsOn: ["build"]}` above:
+      // `next build` currently fails on this checkout's path (space + '#'
+      // in the folder name — see docs/landing-page.md), and `pnpm test`
+      // must not drag that in as a side effect of running tests.
+      "dependsOn": ["^build"]
     }
   }
 }

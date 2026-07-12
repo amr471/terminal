@@ -16,7 +16,9 @@
     "dev:migrate": "bash scripts/dev-env.sh migrate",
     "dev:seed": "bash scripts/dev-env.sh seed",
     "dev:reset": "bash scripts/dev-env.sh reset",
-    "dev:down": "bash scripts/dev-env.sh down"
+    "dev:down": "bash scripts/dev-env.sh down",
+    "dev:web": "turbo run dev --filter=@terminal/web",
+    "dev:gateway": "turbo run dev --filter=@terminal/api-gateway"
   },
   "devDependencies": {
     "prettier": "^3.4.2",

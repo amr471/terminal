@@ -74,7 +74,33 @@ export const en = {
   // Errors (referenced by stable code, architecture.md §5.7)
   'error.GW-2001': 'Sign-in failed. Check your email and password.',
   'error.GW-2004': 'Too many requests — slow down a little.',
+  'error.GW-2006': 'This email is already registered — try signing in instead.',
   'error.generic': 'Something went wrong. Try again.',
+
+  // Landing page (P1.2a)
+  'landing.hero_kicker': 'Free · No credit card · RU/EN',
+  'landing.hero_subtitle':
+    'Screener, charts, liquidation maps, news, and an AI strategy desk — one dark, dense workspace built for traders who read tape, not press releases.',
+  'landing.seo_description':
+    'TERMINAL is a free Bloomberg-style trading terminal for crypto and stocks: real-time screener, liquidation maps, news, economic calendar, and AI-assisted strategy — in English and Russian.',
+  'landing.features_heading': 'What you get',
+  'landing.features.screener_title': 'Real-time screener',
+  'landing.features.screener_body':
+    'Sort thousands of instruments by volume, funding, open interest, and volatility — with a custom filter builder for the setups you actually trade.',
+  'landing.features.liq_title': 'Liquidation maps',
+  'landing.features.liq_body':
+    'See where leverage clusters and where it breaks — a formula-based heatmap side by side with real on-chain positions.',
+  'landing.features.ai_title': 'AI strategy desk',
+  'landing.features.ai_body':
+    'Describe a strategy in plain language and backtest it against real history — your own Anthropic key, never shared, never logged.',
+  'landing.signup_heading': 'Create your free account',
+  'landing.signup.display_name': 'Name (optional)',
+  'landing.signup.submit': 'Create free account',
+  'landing.signup.success_title': "You're in.",
+  'landing.signup.success_body':
+    'Account created for {email}. The terminal is still in development — we will let you know the moment it opens.',
+  'landing.signup.error_invalid_email': 'Enter a valid email address.',
+  'landing.signup.error_password_too_short': 'Use at least 10 characters.',
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;
