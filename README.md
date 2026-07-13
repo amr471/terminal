@@ -45,6 +45,8 @@ pnpm dev:gateway   # api-gateway on :8080
 pnpm dev:web       # Next.js on https://localhost:3000
 ```
 
+Both scripts load the root `.env` themselves (via `dotenv-cli`) — `dev:up`/`dev:migrate` are the only other place `.env` gets read automatically. If you add or change a value in `.env`, restart whichever of `dev:web`/`dev:gateway` you touched; a running dev server does not pick up file changes on its own.
+
 The web app talks to the gateway through a same-origin proxy, not directly —
 see `docs/landing-page.md` for why. First visit to `https://localhost:3000`
 will show a self-signed-certificate warning unless `mkcert` is installed

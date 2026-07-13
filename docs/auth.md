@@ -98,6 +98,18 @@ table:
 Both providers are optional at the env level — if credentials are absent,
 their routes return 401 `GW-2007` instead of the gateway failing to start.
 
+### Local env loading (fixed at P1.2c)
+
+Neither `pnpm dev:web` (`next dev`, which only auto-loads `.env` files from
+its own directory) nor `pnpm dev:gateway` (plain `node --watch`) ever read
+the root `.env` — only `scripts/dev-env.sh` (`dev:up`/`dev:migrate`) sources
+it, for the Postgres bootstrap. That meant every OAuth env var above was
+silently invisible to both dev processes unless exported into the shell by
+hand. Both packages' `dev` scripts now run through `dotenv-cli`
+(`dotenv -e ../../.env -- ...`) so `.env` is loaded the same way for every
+local process. No code path changed — `process.env.*` reads are unchanged —
+this only fixes how the values get there in local dev.
+
 ### Post-login redirect (fixed at P1.2c)
 
 Google/Discord's callbacks originally did `reply.redirect(config.publicApiUrl)`
