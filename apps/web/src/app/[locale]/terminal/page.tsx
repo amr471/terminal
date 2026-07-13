@@ -8,10 +8,11 @@ import {
   type TerminalTabSummary,
 } from '@terminal/types';
 import { t } from '@terminal/i18n';
-import { IconRail, StatusBar } from '@terminal/ui';
+import { IconRail } from '@terminal/ui';
 import { gatewayUrl } from '../../../lib/gatewayUrl';
 import { TerminalCommandBar } from '../../../components/TerminalCommandBar';
 import { TerminalTabs } from '../../../components/TerminalTabs';
+import { LiveStatusBar } from '../../../components/LiveStatusBar';
 
 interface TerminalPageProps {
   params: Promise<{ locale: string }>;
@@ -102,7 +103,7 @@ export default async function TerminalPage({ params }: TerminalPageProps) {
 
   return (
     <div className="terminal-shell">
-      <StatusBar locale={locale} />
+      <LiveStatusBar locale={locale} initialNowIso={new Date().toISOString()} />
       <div className="terminal-shell__body">
         <IconRail locale={locale} hrefFor={() => `/${locale}/terminal`} />
         <main className="terminal-shell__main">
