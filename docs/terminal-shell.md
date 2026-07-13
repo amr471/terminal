@@ -106,12 +106,49 @@ click to activate, double-click to rename inline, a "+" button to open a new
 tab, and — since the standard WAI-ARIA tabs pattern already claims plain
 ArrowLeft/ArrowRight for moving focus between tabs — reordering is
 `Alt+ArrowLeft`/`Alt+ArrowRight` on a focused tab (advertised via
-`aria-keyshortcuts`) rather than a pointer drag-and-drop implementation,
-which was called out and accepted as this task's scope going in.
+`aria-keyshortcuts`). P1.3a shipped that keyboard-only, deliberately —
 `TerminalWorkspace` gained a required `tabId` prop (the autosave target,
 `PUT /layouts/tabs/:tabId`) and is remounted via `key={activeTab.id}` on
 every tab switch, since its `initialDefinition` prop is deliberately only
 read once on mount.
+
+### Mouse drag-and-drop reordering (P1.3b)
+
+Layered on top of P1.3a's Alt+ArrowLeft/Right, which stays exactly as-is —
+the accessible fallback this task was scoped to add *alongside*, not
+replace. Native HTML5 drag-and-drop (`draggable` + `onDragStart`/`onDragOver`/
+`onDrop`/`onDragEnd`), no new dependency, same reasoning `ResizableColumns`
+used for its own pointer math rather than pulling in a library.
+
+`TabBar` (packages/ui) only tracks *which* tab is being dragged and *which
+half* of the hovered tab the pointer is over (before/after, from the
+pointer's x-position against the hovered tab's bounding-rect midpoint) — it
+does not compute the resulting order itself. That stays in `apps/web`'s
+`tabOrder.ts`, same split `onReorder`'s existing `swapAdjacent` already
+uses, and for the same reason: `packages/ui` must not depend on `apps/web`.
+Two new pure functions there:
+
+- `dropTargetIndex(items, dragId, hoverId, insertAfter)` — converts the drag
+  gesture into the index the moved tab should end up at, accounting for the
+  list shrinking by one once the dragged item is removed (the usual
+  off-by-one trap in any drag-reorder implementation).
+- `reorderTo(items, id, targetIndex)` — moves one item to an arbitrary
+  index, unlike `swapAdjacent`'s single-step neighbor swap; `targetIndex` is
+  defined against the *post-removal* array so callers don't have to.
+
+`TerminalTabs.tsx`'s `handleDropReorder` chains the two exactly like
+`handleReorder` chains `swapAdjacent` — compute, optimistically apply,
+best-effort `PUT /layouts/tabs/reorder` with the full new order (the same
+endpoint P1.3a's keyboard reorder already uses; no backend changes needed
+for P1.3b at all). A thin amber `box-shadow` on the hovered tab's near edge
+is the only new visual (`.t-tabbar__tab--drop-before`/`--drop-after` in
+`terminal.css`), plus a dimmed (`opacity: 0.4`) dragged tab
+(`--dragging`) — kept deliberately minimal per CLAUDE.md §5's "refined, not
+cluttered."
+
+Touch/mobile drag is out of scope — native HTML5 drag-and-drop doesn't fire
+on touch at all, and this is a desktop-first terminal (same class of
+scope call as P1.3's fixed-column layout grid).
 
 ## Session gating — Server Component, not middleware
 

@@ -9,11 +9,24 @@
  * than overloading the plain arrow keys, which the tablist pattern already
  * claims for focus movement. Renaming is double-click-to-edit, inline.
  *
+ * P1.3b adds mouse drag-and-drop reordering on top of that same
+ * Alt+ArrowLeft/Right path — the keyboard route stays exactly as it was
+ * (the accessible fallback this task was scoped to preserve, not replace).
+ * Native HTML5 drag-and-drop, no new dependency: `draggable` + `onDragStart`/
+ * `onDragOver`/`onDrop`/`onDragEnd`. This component only tracks which tab is
+ * being dragged and which half of the hovered tab the pointer is over
+ * (before/after) — converting that into an actual array index is
+ * `onDropReorder`'s caller's job (apps/web's `dropTargetIndex`/`reorderTo`
+ * in tabOrder.ts, unit-tested independent of real drag events, which
+ * `node --test` can't simulate), same split `onReorder`'s `swapAdjacent`
+ * already uses.
+ *
  * All mutation is via callbacks — this component holds only its own local
- * "currently editing which tab" state; the caller (apps/web's
- * TerminalTabs.tsx) owns the tab list itself and talks to the gateway.
+ * "currently editing which tab" and "currently dragging which tab" state;
+ * the caller (apps/web's TerminalTabs.tsx) owns the tab list itself and
+ * talks to the gateway.
  */
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 
 export interface TabBarTab {
   id: string;
@@ -27,6 +40,13 @@ export interface TabBarProps {
   onClose: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onReorder: (id: string, direction: 'left' | 'right') => void;
+  /** Mouse drag-and-drop reorder (P1.3b). This component only knows which
+   * tab was dragged, which tab it was dropped on, and which half of that
+   * tab (before/after) — it deliberately does NOT compute the resulting
+   * array itself (that's apps/web's tabOrder.ts's `dropTargetIndex` +
+   * `reorderTo`, same as `onReorder`'s `swapAdjacent` above); packages/ui
+   * must not depend on apps/web. */
+  onDropReorder: (dragId: string, hoverId: string, insertAfter: boolean) => void;
   onNewTab: () => void;
   /** aria-label for the tablist itself, e.g. t(locale, 'terminal.tab.list_label'). */
   tablistLabel: string;
@@ -36,6 +56,11 @@ export interface TabBarProps {
   closeTabLabel: string;
 }
 
+interface DropIndicator {
+  id: string;
+  side: 'before' | 'after';
+}
+
 export function TabBar({
   tabs,
   activeTabId,
@@ -43,6 +68,7 @@ export function TabBar({
   onClose,
   onRename,
   onReorder,
+  onDropReorder,
   onNewTab,
   tablistLabel,
   newTabLabel,
@@ -51,6 +77,45 @@ export function TabBar({
   const listRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
+
+  function clearDragState(): void {
+    setDragId(null);
+    setDropIndicator(null);
+  }
+
+  function onTabDragStart(id: string) {
+    return (event: DragEvent<HTMLDivElement>) => {
+      setDragId(id);
+      event.dataTransfer.effectAllowed = 'move';
+      // Firefox requires data actually be set for the drag to start.
+      event.dataTransfer.setData('text/plain', id);
+    };
+  }
+
+  function onTabDragOver(id: string) {
+    return (event: DragEvent<HTMLDivElement>) => {
+      if (!dragId || dragId === id) return;
+      event.preventDefault(); // required for onDrop to fire at all
+      const rect = event.currentTarget.getBoundingClientRect();
+      const side: DropIndicator['side'] =
+        event.clientX - rect.left < rect.width / 2 ? 'before' : 'after';
+      setDropIndicator((current) =>
+        current?.id === id && current.side === side ? current : { id, side },
+      );
+    };
+  }
+
+  function onTabDrop(id: string) {
+    return (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (dragId && dragId !== id && dropIndicator?.id === id) {
+        onDropReorder(dragId, id, dropIndicator.side === 'after');
+      }
+      clearDragState();
+    };
+  }
 
   function focusTab(id: string): void {
     listRef.current?.querySelector<HTMLElement>(`[data-tab-id="${id}"]`)?.focus();
@@ -90,6 +155,16 @@ export function TabBar({
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId;
           const editing = editingId === tab.id;
+          const dragging = dragId === tab.id;
+          const indicator = dropIndicator?.id === tab.id ? dropIndicator.side : null;
+          const className = [
+            't-tabbar__tab',
+            active && 't-tabbar__tab--active',
+            dragging && 't-tabbar__tab--dragging',
+            indicator && `t-tabbar__tab--drop-${indicator}`,
+          ]
+            .filter(Boolean)
+            .join(' ');
           return (
             <div
               key={tab.id}
@@ -97,14 +172,22 @@ export function TabBar({
               data-tab-id={tab.id}
               aria-selected={active}
               tabIndex={active ? 0 : -1}
-              className={`t-tabbar__tab${active ? ' t-tabbar__tab--active' : ''}`}
+              className={className}
               aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+              draggable={!editing}
               onClick={() => !editing && onActivate(tab.id)}
               onDoubleClick={() => {
                 setDraft(tab.title);
                 setEditingId(tab.id);
               }}
               onKeyDown={onTabKeyDown(tab.id, index)}
+              onDragStart={onTabDragStart(tab.id)}
+              onDragOver={onTabDragOver(tab.id)}
+              onDragLeave={() =>
+                setDropIndicator((current) => (current?.id === tab.id ? null : current))
+              }
+              onDrop={onTabDrop(tab.id)}
+              onDragEnd={clearDragState}
             >
               {editing ? (
                 <input

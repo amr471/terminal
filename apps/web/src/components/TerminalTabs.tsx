@@ -21,7 +21,7 @@ import type { Locale, TerminalTabSummary } from '@terminal/types';
 import { TabBar } from '@terminal/ui';
 import { t } from '@terminal/i18n';
 import { TerminalWorkspace } from './TerminalWorkspace';
-import { swapAdjacent } from '../lib/tabOrder';
+import { swapAdjacent, reorderTo, dropTargetIndex } from '../lib/tabOrder';
 
 export interface TerminalTabsProps {
   locale: Locale;
@@ -86,6 +86,27 @@ export function TerminalTabs({ locale, initialTabs }: TerminalTabsProps) {
     });
   }, []);
 
+  const handleDropReorder = useCallback(
+    (dragId: string, hoverId: string, insertAfter: boolean) => {
+      setTabs((current) => {
+        const targetIndex = dropTargetIndex(current, dragId, hoverId, insertAfter);
+        if (targetIndex === null) return current;
+        const next = reorderTo(current, dragId, targetIndex);
+        const changed = next.some((tab, i) => tab.id !== current[i]?.id);
+        if (!changed) return current;
+        fetch('/api/layouts/tabs/reorder', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order: next.map((tab) => tab.id) }),
+        }).catch(() => {
+          // Best-effort — see file header.
+        });
+        return next;
+      });
+    },
+    [],
+  );
+
   const handleNewTab = useCallback(() => {
     const title = t(locale, 'terminal.tab.new');
     fetch('/api/layouts/tabs', {
@@ -119,6 +140,7 @@ export function TerminalTabs({ locale, initialTabs }: TerminalTabsProps) {
         onClose={handleClose}
         onRename={handleRename}
         onReorder={handleReorder}
+        onDropReorder={handleDropReorder}
         onNewTab={handleNewTab}
         tablistLabel={t(locale, 'terminal.tab.list_label')}
         newTabLabel={t(locale, 'terminal.tab.new')}

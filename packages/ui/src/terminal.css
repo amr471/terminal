@@ -335,6 +335,17 @@
   outline: 2px solid var(--t-color-accent-amber);
   outline-offset: -2px;
 }
+/* Mouse drag-and-drop reorder (P1.3b) — Alt+ArrowLeft/Right above stays the
+   a11y fallback; these are purely mouse-drag visual feedback. */
+.t-tabbar__tab--dragging {
+  opacity: 0.4;
+}
+.t-tabbar__tab--drop-before {
+  box-shadow: -2px 0 0 0 var(--t-color-accent-amber);
+}
+.t-tabbar__tab--drop-after {
+  box-shadow: 2px 0 0 0 var(--t-color-accent-amber);
+}
 .t-tabbar__title {
   overflow: hidden;
   text-overflow: ellipsis;
