@@ -31,6 +31,8 @@ job; this doc is the "what exists and how it fits together" reference.
 | GET    | `/auth/me`              | yes           | returns `{id, email, locale}`                             |
 | GET    | `/auth/google`          | no            | redirects to Google; 401 GW-2007 if not configured        |
 | GET    | `/auth/google/callback` | no            | exchanges code, verifies `id_token`, links/creates a user |
+| GET    | `/auth/discord`         | no            | redirects to Discord; 401 GW-2007 if not configured       |
+| GET    | `/auth/discord/callback`| no            | exchanges code, checks `verified`, links/creates a user   |
 | POST   | `/auth/telegram`        | no            | verifies the Login Widget HMAC, links/creates a user      |
 
 All auth endpoints (signup/login/telegram) are rate-limited to 10 req/min per
@@ -48,7 +50,7 @@ no-enumeration property as GW-2001 and `verifyPasswordTimingSafe`.
 
 ## OAuth account linking
 
-Both providers write into the existing `oauth_accounts` table
+All three providers write into the existing `oauth_accounts` table
 (`provider`, `provider_account_id` → `user_id`), never a provider-specific
 table:
 
@@ -57,6 +59,12 @@ table:
   check-and-consume via `DEL`) to prevent CSRF. Only a **verified** Google
   email is trusted for account linking to an existing password/email user;
   an unverified email creates/links nothing (GW-2007).
+- **Discord** (P1.1a): plain OAuth2 authorization-code flow — Discord has no
+  OIDC `id_token`, so `discordAuth.ts` uses `fetch()` directly (token
+  exchange, then `GET /users/@me`) rather than a client library. Same Redis
+  state/CSRF pattern as Google. Discord's own `verified` flag on the profile
+  is the same trust gate Google's `email_verified` is — an unverified email
+  creates/links nothing (GW-2007).
 - **Telegram**: [Login Widget](https://core.telegram.org/widgets/login)
   payload, verified with `TELEGRAM_BOT_TOKEN` per Telegram's documented
   HMAC-SHA256 scheme (`telegramAuth.ts`, no network call, no third-party

@@ -148,6 +148,19 @@ test(
   },
 );
 
+test(
+  '/auth/discord redirects when configured, else reports GW-2007',
+  { skip: !reachable },
+  async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: 'GET', url: '/auth/discord' });
+    // Test env has no Discord credentials by default — assert the graceful-degradation path.
+    assert.equal(res.statusCode, 401);
+    assert.equal(JSON.parse(res.body).error.code, 'GW-2007');
+    await app.close();
+  },
+);
+
 after(async () => {
   if (reachable) {
     await pool.query(`DELETE FROM users WHERE email LIKE 'app-test-%@example.invalid'`);

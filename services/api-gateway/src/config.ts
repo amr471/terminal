@@ -33,6 +33,10 @@ const envSchema = z.object({
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_OAUTH_REDIRECT_URI: z.string().url().optional(),
 
+  DISCORD_OAUTH_CLIENT_ID: z.string().optional(),
+  DISCORD_OAUTH_CLIENT_SECRET: z.string().optional(),
+  DISCORD_OAUTH_REDIRECT_URI: z.string().url().optional(),
+
   TELEGRAM_BOT_TOKEN: z.string().optional(),
 });
 
@@ -59,6 +63,15 @@ export const config = {
           clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
           redirectUri:
             env.GOOGLE_OAUTH_REDIRECT_URI ?? `${env.NEXT_PUBLIC_API_URL}/auth/google/callback`,
+        }
+      : undefined,
+  discord:
+    env.DISCORD_OAUTH_CLIENT_ID && env.DISCORD_OAUTH_CLIENT_SECRET
+      ? {
+          clientId: env.DISCORD_OAUTH_CLIENT_ID,
+          clientSecret: env.DISCORD_OAUTH_CLIENT_SECRET,
+          redirectUri:
+            env.DISCORD_OAUTH_REDIRECT_URI ?? `${env.NEXT_PUBLIC_API_URL}/auth/discord/callback`,
         }
       : undefined,
   telegram: env.TELEGRAM_BOT_TOKEN ? { botToken: env.TELEGRAM_BOT_TOKEN } : undefined,

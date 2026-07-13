@@ -11,6 +11,7 @@ import {
   signupSchema,
   loginSchema,
   googleCallbackSchema,
+  discordCallbackSchema,
   telegramLoginSchema,
 } from './authSchemas.js';
 import { hashPassword, verifyPasswordTimingSafe } from './password.js';
@@ -26,6 +27,7 @@ import {
 import { recordAuditEvent } from './audit.js';
 import { AppError, sendAppError } from './errors.js';
 import { buildGoogleAuthUrl, exchangeGoogleCode } from './googleAuth.js';
+import { buildDiscordAuthUrl, exchangeDiscordCode } from './discordAuth.js';
 import { verifyTelegramLogin } from './telegramAuth.js';
 import { config, SESSION_TTL_MS } from './config.js';
 import { pool } from './db.js';
@@ -190,6 +192,67 @@ export function registerAuthRoutes(app: FastifyInstance): void {
         return reply.redirect(config.publicApiUrl);
       } catch {
         return sendAppError(reply, new AppError('GW-2007', { provider: 'google' }));
+      }
+    },
+  );
+
+  // ── Discord OAuth ───────────────────────────────────────────────────────
+  app.get('/auth/discord', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (_request, reply) => {
+    if (!config.discord) {
+      return sendAppError(reply, new AppError('GW-2007', { provider: 'discord' }));
+    }
+    const state = randomBytes(16).toString('base64url');
+    await redis.set(`oauth:state:${state}`, '1', 'EX', OAUTH_STATE_TTL_SECONDS);
+    return reply.redirect(buildDiscordAuthUrl(state));
+  });
+
+  app.get(
+    '/auth/discord/callback',
+    { config: { rateLimit: AUTH_RATE_LIMIT } },
+    async (request, reply) => {
+      if (!config.discord) {
+        return sendAppError(reply, new AppError('GW-2007', { provider: 'discord' }));
+      }
+      const parsed = discordCallbackSchema.safeParse(request.query);
+      if (!parsed.success) return sendAppError(reply, new AppError('GW-2008'));
+
+      const stateKey = `oauth:state:${parsed.data.state}`;
+      const stateOk = await redis.del(stateKey); // atomic check-and-consume
+      if (!stateOk) return sendAppError(reply, new AppError('GW-2007', { provider: 'discord' }));
+
+      try {
+        const identity = await exchangeDiscordCode(parsed.data.code);
+        if (!identity.verified) {
+          return sendAppError(
+            reply,
+            new AppError('GW-2007', { provider: 'discord', reason: 'email_unverified' }),
+          );
+        }
+
+        let userId = await findOAuthUserId(pool, 'discord', identity.id);
+        let isNewUser = false;
+        if (!userId) {
+          const linked = await linkOrCreateOAuthUser(pool, 'discord', identity.id, {
+            email: identity.email,
+            locale: negotiateLocale(request.headers['accept-language']),
+            ...(identity.username !== undefined ? { displayName: identity.username } : {}),
+          });
+          userId = linked.userId;
+          isNewUser = linked.created;
+        }
+
+        const session = await issueSession(pool, redis, userId, {
+          ...(request.ip !== undefined ? { ip: request.ip } : {}),
+          userAgent: request.headers['user-agent'] ?? '',
+        });
+        setSessionCookie(reply, session.token, session.expiresAt);
+        await recordAuditEvent(pool, isNewUser ? 'auth.signup' : 'auth.login', userId, {
+          method: 'discord',
+        });
+
+        return reply.redirect(config.publicApiUrl);
+      } catch {
+        return sendAppError(reply, new AppError('GW-2007', { provider: 'discord' }));
       }
     },
   );

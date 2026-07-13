@@ -19,6 +19,11 @@ export const googleCallbackSchema = z.object({
   state: z.string().min(1),
 });
 
+export const discordCallbackSchema = z.object({
+  code: z.string().min(1),
+  state: z.string().min(1),
+});
+
 /** Shape posted by the Telegram Login Widget's callback. */
 export const telegramLoginSchema = z.object({
   id: z.number(),
