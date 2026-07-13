@@ -34,6 +34,7 @@ job; this doc is the "what exists and how it fits together" reference.
 | GET    | `/auth/discord`         | no            | redirects to Discord; 401 GW-2007 if not configured       |
 | GET    | `/auth/discord/callback`| no            | exchanges code, checks `verified`, links/creates a user   |
 | POST   | `/auth/telegram`        | no            | verifies the Login Widget HMAC, links/creates a user      |
+| GET    | `/auth/telegram/callback`| no           | same verification, redirect-link variant (P1.2c)          |
 
 All auth endpoints (signup/login/telegram) are rate-limited to 10 req/min per
 IP on top of the gateway's global 100 req/min (trading-security: "Rate-limit
@@ -76,14 +77,23 @@ table:
   `services/telegram-bot/migrations/0001_tg_links.sql`): that table is for
   bot alert delivery (chat_id, deep-link verification, P1.13/P2.4), separate
   from "log into the web app with your Telegram account."
-  **Frontend (P1.2c):** `apps/web`'s `TelegramLoginButton` renders the
-  widget in callback mode (`data-onauth`, not `data-auth-url`) so it can
-  `POST /api/auth/telegram` itself through the same-origin proxy rather than
-  needing the backend to accept a GET/query-param variant. Requires
-  `TELEGRAM_BOT_USERNAME` (public, just the bot's `@name`) for the widget's
-  `data-telegram-login` attribute, and **the bot's domain must be authorized
-  via @BotFather's `/setdomain` command** before the widget will render at
-  all on that domain — an account-setup step, not something fixable in code.
+  **Frontend (P1.2c):** the landing page renders a plain `<a>` styled
+  identically to the Google/Discord buttons, not Telegram's own widget
+  iframe. It links to Telegram's ["Login URL" redirect
+  method](https://core.telegram.org/widgets/login#link-with-a-bot-username)
+  (`https://oauth.telegram.org/auth?bot_id=...&origin=...&return_to=...`),
+  which sends the browser to Telegram, then redirects it back to
+  `GET /auth/telegram/callback` with the signed payload as query params —
+  same shape as the widget's callback, just coerced from strings
+  (`telegramCallbackQuerySchema`) instead of arriving as JS values, and
+  handled the same way `verifyTelegramLogin` always has. `POST
+  /auth/telegram` (the original JS-callback/widget endpoint) still exists
+  unchanged, in case a future surface wants the embedded widget instead.
+  Requires `TELEGRAM_BOT_ID` (public — the numeric prefix of the bot token,
+  not the token itself) so the frontend can build the link, and **the bot's
+  domain must be authorized via @BotFather's `/setdomain` command** before
+  Telegram will redirect back to it — an account-setup step, not something
+  fixable in code.
 
 Both providers are optional at the env level — if credentials are absent,
 their routes return 401 `GW-2007` instead of the gateway failing to start.

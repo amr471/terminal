@@ -94,7 +94,8 @@ export const ru: Catalog = {
   'landing.signup.error_password_too_short': 'Минимум 10 символов.',
   'landing.signup.or_continue_with': 'Или войдите через',
   'landing.signup.google': 'Войти через Google',
-  'landing.signup.telegram_error': 'Не удалось войти через Telegram. Попробуйте ещё раз.',
+  'landing.signup.discord': 'Войти через Discord',
+  'landing.signup.telegram': 'Войти через Telegram',
 
   // Terminal shell (P1.3)
   'terminal.command_placeholder': 'например, BTC HEAT',

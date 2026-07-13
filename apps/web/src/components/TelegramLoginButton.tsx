@@ -1,7 +1,14 @@
 'use client';
 
 /**
- * Telegram Login Widget (P1.2c), callback mode rather than redirect mode:
+ * Telegram Login Widget, embedded-iframe variant. NOT currently used on the
+ * landing page — P1.2c switched to `lib/telegramLoginUrl.ts`'s plain-link
+ * redirect method instead, so the button can be styled identically to
+ * Google/Discord rather than rendering Telegram's own widget chrome. Kept
+ * here in case a future surface (e.g. inside the terminal, or the Telegram
+ * mini-app) wants the embedded widget instead of a full-page redirect.
+ *
+ * Callback mode rather than redirect mode:
  * `data-onauth` hands the signed payload to a JS callback so this component
  * can POST it to /api/auth/telegram itself (through the same-origin proxy,
  * same as the rest of auth) instead of requiring the backend to also accept

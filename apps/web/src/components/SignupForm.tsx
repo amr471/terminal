@@ -13,19 +13,20 @@
  * time this redirect fires (the fetch response's Set-Cookie is applied
  * before this callback runs).
  */
-import { useCallback, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Locale } from '@terminal/types';
 import { t } from '@terminal/i18n';
 import { validateSignupInput, type SignupFieldErrors } from '../lib/validateSignup';
 import { authErrorMessageKey } from '../lib/authErrorMessage';
-import { TelegramLoginButton, type TelegramAuthUser } from './TelegramLoginButton';
 
 export interface SignupFormProps {
   locale: Locale;
-  /** Undefined when TELEGRAM_BOT_USERNAME isn't configured — same
-   * optional-if-unconfigured pattern the backend uses (docs/auth.md). */
-  telegramBotUsername?: string;
+  /** Undefined when TELEGRAM_BOT_ID isn't configured — same
+   * optional-if-unconfigured pattern the backend uses (docs/auth.md). Full
+   * oauth.telegram.org redirect URL, built server-side (page.tsx) via
+   * lib/telegramLoginUrl.ts. */
+  telegramLoginUrl?: string;
 }
 
 type Status = 'idle' | 'submitting' | 'success' | 'error';
@@ -38,7 +39,7 @@ function isSignupErrorBody(value: unknown): value is SignupErrorBody {
   return typeof value === 'object' && value !== null;
 }
 
-export function SignupForm({ locale, telegramBotUsername }: SignupFormProps) {
+export function SignupForm({ locale, telegramLoginUrl }: SignupFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -46,28 +47,6 @@ export function SignupForm({ locale, telegramBotUsername }: SignupFormProps) {
   const [status, setStatus] = useState<Status>('idle');
   const [fieldErrors, setFieldErrors] = useState<SignupFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
-
-  const handleTelegramAuth = useCallback(
-    (user: TelegramAuthUser) => {
-      setStatus('submitting');
-      setFormError(null);
-      fetch('/api/auth/telegram', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(user),
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error('telegram auth failed');
-          setStatus('success');
-          router.push(`/${locale}/terminal`);
-        })
-        .catch(() => {
-          setFormError(t(locale, 'landing.signup.telegram_error'));
-          setStatus('error');
-        });
-    },
-    [locale, router],
-  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -182,11 +161,25 @@ export function SignupForm({ locale, telegramBotUsername }: SignupFormProps) {
       </div>
 
       <div className="landing__signup-social">
-        <a className="landing__social-button landing__social-button--google" href="/api/auth/google">
+        <a
+          className="landing__social-button landing__social-button--google"
+          href="/api/auth/google"
+        >
           {t(locale, 'landing.signup.google')}
         </a>
-        {telegramBotUsername && (
-          <TelegramLoginButton botUsername={telegramBotUsername} onAuth={handleTelegramAuth} />
+        <a
+          className="landing__social-button landing__social-button--discord"
+          href="/api/auth/discord"
+        >
+          {t(locale, 'landing.signup.discord')}
+        </a>
+        {telegramLoginUrl && (
+          <a
+            className="landing__social-button landing__social-button--telegram"
+            href={telegramLoginUrl}
+          >
+            {t(locale, 'landing.signup.telegram')}
+          </a>
         )}
       </div>
     </div>

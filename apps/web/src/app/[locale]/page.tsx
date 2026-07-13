@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { isLocale, type Locale } from '@terminal/types';
 import { t, type MessageKey } from '@terminal/i18n';
 import { SignupForm } from '../../components/SignupForm';
 import { ScrollReveal } from '../../components/ScrollReveal';
+import { buildTelegramLoginUrl } from '../../lib/telegramLoginUrl';
 
 interface LandingPageProps {
   params: Promise<{ locale: string }>;
@@ -50,6 +52,20 @@ export default async function LandingPage({ params }: LandingPageProps) {
   if (!isLocale(raw)) notFound();
   const locale: Locale = raw;
 
+  // Origin is derived from the actual request rather than a hardcoded env
+  // var — works the same in dev and any future deployment, and must match
+  // whatever's authorized via @BotFather's /setdomain (docs/auth.md).
+  const host = (await headers()).get('host') ?? 'localhost:3000';
+  const origin = `https://${host}`;
+  const telegramBotId = process.env.TELEGRAM_BOT_ID;
+  const telegramLoginUrl = telegramBotId
+    ? buildTelegramLoginUrl({
+        botId: telegramBotId,
+        origin,
+        returnTo: `${origin}/api/auth/telegram/callback`,
+      })
+    : undefined;
+
   return (
     <main className="landing">
       <header className="landing__nav">
@@ -87,9 +103,7 @@ export default async function LandingPage({ params }: LandingPageProps) {
           <h2 className="landing__section-heading">{t(locale, 'landing.signup_heading')}</h2>
           <SignupForm
             locale={locale}
-            {...(process.env.TELEGRAM_BOT_USERNAME !== undefined
-              ? { telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME }
-              : {})}
+            {...(telegramLoginUrl !== undefined ? { telegramLoginUrl } : {})}
           />
         </ScrollReveal>
       </section>

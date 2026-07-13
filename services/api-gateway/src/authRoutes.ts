@@ -13,6 +13,7 @@ import {
   googleCallbackSchema,
   discordCallbackSchema,
   telegramLoginSchema,
+  telegramCallbackQuerySchema,
 } from './authSchemas.js';
 import { hashPassword, verifyPasswordTimingSafe } from './password.js';
 import { isLoginLocked, recordLoginFailure, clearLoginFailures } from './loginThrottle.js';
@@ -301,6 +302,55 @@ export function registerAuthRoutes(app: FastifyInstance): void {
 
     return reply.send({ userId });
   });
+
+  // Redirect-link variant (P1.2c) — Telegram's oauth.telegram.org "Login URL"
+  // method delivers the same signed payload as the widget above, but as GET
+  // query params on a full-page redirect back here, rather than a JS
+  // callback. This is what lets the landing page's Telegram button be a
+  // plain styled <a>, matching Google/Discord, instead of Telegram's own
+  // widget iframe.
+  app.get(
+    '/auth/telegram/callback',
+    { config: { rateLimit: AUTH_RATE_LIMIT } },
+    async (request, reply) => {
+      if (!config.telegram) {
+        return sendAppError(reply, new AppError('GW-2007', { provider: 'telegram' }));
+      }
+      const parsed = telegramCallbackQuerySchema.safeParse(request.query);
+      if (!parsed.success) return sendAppError(reply, new AppError('GW-2008'));
+
+      const valid = verifyTelegramLogin(parsed.data, config.telegram.botToken);
+      if (!valid) return sendAppError(reply, new AppError('GW-2007', { provider: 'telegram' }));
+
+      const locale = negotiateLocale(request.headers['accept-language']);
+      const providerAccountId = String(parsed.data.id);
+      let userId = await findOAuthUserId(pool, 'telegram', providerAccountId);
+      let isNewUser = false;
+      if (!userId) {
+        const displayName = [parsed.data.first_name, parsed.data.last_name]
+          .filter(Boolean)
+          .join(' ');
+        const linked = await linkOrCreateOAuthUser(pool, 'telegram', providerAccountId, {
+          email: null, // Telegram never provides one — see migration 0003
+          locale,
+          ...(displayName ? { displayName } : {}),
+        });
+        userId = linked.userId;
+        isNewUser = linked.created;
+      }
+
+      const session = await issueSession(pool, redis, userId, {
+        ...(request.ip !== undefined ? { ip: request.ip } : {}),
+        userAgent: request.headers['user-agent'] ?? '',
+      });
+      setSessionCookie(reply, session.token, session.expiresAt);
+      await recordAuditEvent(pool, isNewUser ? 'auth.signup' : 'auth.login', userId, {
+        method: 'telegram',
+      });
+
+      return reply.redirect(`${config.webAppOrigin}/${locale}/terminal`);
+    },
+  );
 }
 
 // Re-exported for tests that need these without importing config.js/sessionAuth.js directly.
