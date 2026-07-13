@@ -150,6 +150,54 @@ Touch/mobile drag is out of scope — native HTML5 drag-and-drop doesn't fire
 on touch at all, and this is a desktop-first terminal (same class of
 scope call as P1.3's fixed-column layout grid).
 
+### Panel drag-and-drop repositioning (P1.3c)
+
+Revisits the "columns of stacked panels, not a general N×M grid" scope call
+this file opens with — but only the "not movable, only resizable" half of
+it. Moving a panel is still expressed entirely in the existing
+`LayoutDefinition` shape (no schema change): remove it from its source
+column's `panels` array, insert it into the destination column's `panels`
+array at the drop position. **Deliberately scoped to moving a panel into an
+*existing* column/position** — dragging into empty space to create a
+brand-new column isn't included; a future task if wanted.
+
+The pure array surgery is `movePanel(definition, from, hover, insertAfter)`
+in a new `packages/ui/src/panelOrder.ts`, same "pure math, own tests" split
+`resize.ts` and P1.3b's `tabOrder.ts` both use. Panels have one wrinkle tabs
+didn't: dragging the *last* panel out of a column would leave behind an
+empty column, which `validateLayoutDefinition` (packages/types) rejects as
+invalid — so `movePanel` removes that column entirely instead, and the
+remaining columns' space redistributes for free via flex (no rebalancing
+math needed). A move that would push the destination column over
+`MAX_PANELS_PER_COLUMN` is rejected outright, same
+reject-rather-than-partial-clamp stance `resizeTracks` already takes at the
+size floor.
+
+Unlike `TabBar` (a controlled, "dumb" component — `TerminalTabs.tsx` in
+apps/web owns the tab array and all its mutations), `ResizableColumns`
+already owns its own `definition` state and already has an `onChange`
+autosave escape hatch, exactly like its resize handles do — so
+`movePanel` is called directly inside `ResizableColumns`, no
+`packages/ui`-must-not-import-`apps/web` split needed here the way P1.3b's
+`onDropReorder` callback required for tabs.
+
+Dragging is initiated from the panel's **header only** (`Panel`'s new
+`headerProps` passthrough — `draggable`, the drag event handlers, and the
+Alt+Arrow keyboard handler all attach there), not the whole panel, so a
+future panel with real interactive content (table rows, text) doesn't fight
+the browser's native drag gesture over its data body. The drop target
+detection (which panel, top half vs bottom half) still covers the panel's
+full bounding box, via `onDragOver`/`onDrop` on the outer panel wrapper —
+mirrors how real dockable UIs use the title bar as the grip but accept a
+drop anywhere over the target pane.
+
+**Keyboard fallback**, consistent with `TabBar`'s Alt+ArrowLeft/Right and
+the resize handles' plain arrow keys: a focused panel header takes
+Alt+ArrowUp/Down to swap with the adjacent panel in its own column, and
+Alt+ArrowLeft/Right to move to the end of the adjacent column (simplest
+predictable behavior — it doesn't try to preserve "the same vertical slot"
+across columns of different lengths, which gets fiddly for little benefit).
+
 ## Session gating — Server Component, not middleware
 
 `apps/web/src/app/[locale]/terminal/page.tsx` is a Server Component that

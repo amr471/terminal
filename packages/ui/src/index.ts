@@ -42,3 +42,4 @@ export {
 export { ResizableColumns, type ResizableColumnsProps } from './components/ResizableColumns.js';
 export { TabBar, type TabBarProps, type TabBarTab } from './components/TabBar.js';
 export { pixelDeltaToFr, resizeTracks, tracksToCssTemplate } from './resize.js';
+export { movePanel, type PanelCoords } from './panelOrder.js';

@@ -42,6 +42,14 @@
   padding: 0 var(--t-space-md);
   border-bottom: 1px solid var(--t-color-border-subtle);
   flex: none;
+  /* Drag handle for panel repositioning (P1.3c) — grabbing the header, not
+     the whole panel, keeps its data body free for text selection / future
+     row interaction. */
+  cursor: grab;
+}
+.t-panel__header:focus-visible {
+  outline: 2px solid var(--t-color-accent-amber);
+  outline-offset: -2px;
 }
 .t-panel__title {
   margin: 0;
@@ -266,6 +274,18 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+/* Mouse drag-and-drop panel repositioning (P1.3c) — Alt+Arrow keys on the
+   panel header stay the a11y fallback; these are purely mouse-drag visual
+   feedback, same treatment the tab strip's P1.3b indicators use. */
+.t-columns__panel--dragging {
+  opacity: 0.4;
+}
+.t-columns__panel--drop-before {
+  box-shadow: inset 0 2px 0 0 var(--t-color-accent-amber);
+}
+.t-columns__panel--drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--t-color-accent-amber);
 }
 .t-resize-handle {
   flex: none;

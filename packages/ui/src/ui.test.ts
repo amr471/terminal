@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { LayoutDefinition } from '@terminal/types';
 import { color, toCssVariables, renderCss } from './tokens.js';
 import { decDirection } from './direction.js';
 import { parseCommand } from './command.js';
 import { pixelDeltaToFr, resizeTracks, tracksToCssTemplate } from './resize.js';
+import { movePanel } from './panelOrder.js';
 
 // ── WCAG contrast verification (design-token contract) ───────────────────────
 
@@ -128,4 +130,106 @@ test('resizeTracks: out-of-range boundary index is a no-op', () => {
 test('tracksToCssTemplate: renders fr arrays as CSS grid track lists', () => {
   assert.equal(tracksToCssTemplate([1, 1]), '1fr 1fr');
   assert.equal(tracksToCssTemplate([3, 1, 1]), '3fr 1fr 1fr');
+});
+
+// ── panel drag-and-drop repositioning (P1.3c) ────────────────────────────────
+
+function twoColumnLayout(): LayoutDefinition {
+  return {
+    version: 1,
+    columns: [
+      { size: 1, panels: [{ kind: 'screener', size: 1 }] },
+      {
+        size: 1,
+        panels: [
+          { kind: 'chart', size: 1 },
+          { kind: 'news', size: 1 },
+        ],
+      },
+    ],
+  };
+}
+
+function threeSingleColumnLayout(): LayoutDefinition {
+  return {
+    version: 1,
+    columns: [
+      { size: 1, panels: [{ kind: 'screener', size: 1 }] },
+      { size: 1, panels: [{ kind: 'chart', size: 1 }] },
+      { size: 1, panels: [{ kind: 'news', size: 1 }] },
+    ],
+  };
+}
+
+test('movePanel: same-column reorder swaps adjacent panels', () => {
+  const next = movePanel(twoColumnLayout(), { col: 1, panel: 1 }, { col: 1, panel: 0 }, false);
+  assert.deepEqual(
+    next.columns[1]!.panels.map((p) => p.kind),
+    ['news', 'chart'],
+  );
+  // untouched column is a fresh object, but same shape
+  assert.deepEqual(next.columns[0]!.panels.map((p) => p.kind), ['screener']);
+});
+
+test('movePanel: cross-column move empties and removes the source column', () => {
+  const next = movePanel(twoColumnLayout(), { col: 0, panel: 0 }, { col: 1, panel: 0 }, true);
+  assert.equal(next.columns.length, 1);
+  assert.deepEqual(
+    next.columns[0]!.panels.map((p) => p.kind),
+    ['chart', 'screener', 'news'],
+  );
+});
+
+test('movePanel: hover column after the (now-removed) source column shifts down', () => {
+  const next = movePanel(
+    threeSingleColumnLayout(),
+    { col: 0, panel: 0 }, // screener
+    { col: 2, panel: 0 }, // news
+    true,
+  );
+  assert.equal(next.columns.length, 2);
+  assert.deepEqual(next.columns[0]!.panels.map((p) => p.kind), ['chart']);
+  assert.deepEqual(next.columns[1]!.panels.map((p) => p.kind), ['news', 'screener']);
+});
+
+test('movePanel: hover column before the (now-removed) source column needs no shift', () => {
+  const next = movePanel(
+    threeSingleColumnLayout(),
+    { col: 2, panel: 0 }, // news
+    { col: 0, panel: 0 }, // screener
+    false,
+  );
+  assert.equal(next.columns.length, 2);
+  assert.deepEqual(next.columns[0]!.panels.map((p) => p.kind), ['news', 'screener']);
+  assert.deepEqual(next.columns[1]!.panels.map((p) => p.kind), ['chart']);
+});
+
+test('movePanel: rejects a cross-column move that would exceed MAX_PANELS_PER_COLUMN', () => {
+  const full: LayoutDefinition = {
+    version: 1,
+    columns: [
+      { size: 1, panels: [{ kind: 'screener', size: 1 }] },
+      {
+        size: 1,
+        panels: Array.from({ length: 6 }, () => ({ kind: 'chart' as const, size: 1 })),
+      },
+    ],
+  };
+  const next = movePanel(full, { col: 0, panel: 0 }, { col: 1, panel: 0 }, true);
+  assert.deepEqual(next, full);
+  assert.notEqual(next, full);
+});
+
+test('movePanel: same from/hover coordinates is a no-op (fresh object)', () => {
+  const layout = twoColumnLayout();
+  const next = movePanel(layout, { col: 1, panel: 0 }, { col: 1, panel: 0 }, false);
+  assert.deepEqual(next, layout);
+  assert.notEqual(next, layout);
+});
+
+test('movePanel: out-of-range coordinates are a no-op rather than throwing', () => {
+  const layout = twoColumnLayout();
+  assert.deepEqual(movePanel(layout, { col: 5, panel: 0 }, { col: 1, panel: 0 }, false), layout);
+  assert.deepEqual(movePanel(layout, { col: 0, panel: 0 }, { col: 1, panel: 9 }, false), layout);
+  assert.deepEqual(movePanel(layout, { col: 0, panel: 9 }, { col: 1, panel: 0 }, false), layout);
 });
