@@ -28,6 +28,11 @@ const envSchema = z.object({
     .min(16, 'SESSION_SECRET must be at least 16 characters')
     .default(LOCAL_DEV_SESSION_SECRET),
   NEXT_PUBLIC_API_URL: z.string().url().default('http://localhost:8080'),
+  // Where to send the browser after a successful OAuth login (P1.2c) — the
+  // actual web app, NOT this gateway's own address. Defaults to the
+  // mkcert-backed dev origin (docs/landing-page.md) since the session cookie
+  // is Secure and needs an https origin to round-trip.
+  WEB_APP_ORIGIN: z.string().url().default('https://localhost:3000'),
 
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
@@ -56,13 +61,18 @@ export const config = {
   redisUrl: env.REDIS_URL,
   sessionCookieSecret: env.SESSION_SECRET,
   publicApiUrl: env.NEXT_PUBLIC_API_URL,
+  webAppOrigin: env.WEB_APP_ORIGIN,
   google:
     env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET
       ? {
           clientId: env.GOOGLE_OAUTH_CLIENT_ID,
           clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+          // Default routes through the web app's same-origin /api/* proxy
+          // (next.config.mjs), NOT this gateway's own address — otherwise
+          // the Secure session cookie sets on the wrong origin and the
+          // frontend never sees it (P1.2c).
           redirectUri:
-            env.GOOGLE_OAUTH_REDIRECT_URI ?? `${env.NEXT_PUBLIC_API_URL}/auth/google/callback`,
+            env.GOOGLE_OAUTH_REDIRECT_URI ?? `${env.WEB_APP_ORIGIN}/api/auth/google/callback`,
         }
       : undefined,
   discord:
@@ -70,8 +80,9 @@ export const config = {
       ? {
           clientId: env.DISCORD_OAUTH_CLIENT_ID,
           clientSecret: env.DISCORD_OAUTH_CLIENT_SECRET,
+          // Same same-origin-proxy reasoning as Google's redirectUri above.
           redirectUri:
-            env.DISCORD_OAUTH_REDIRECT_URI ?? `${env.NEXT_PUBLIC_API_URL}/auth/discord/callback`,
+            env.DISCORD_OAUTH_REDIRECT_URI ?? `${env.WEB_APP_ORIGIN}/api/auth/discord/callback`,
         }
       : undefined,
   telegram: env.TELEGRAM_BOT_TOKEN ? { botToken: env.TELEGRAM_BOT_TOKEN } : undefined,

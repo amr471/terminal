@@ -168,12 +168,16 @@ export function registerAuthRoutes(app: FastifyInstance): void {
           );
         }
 
+        // Hoisted so it's available for the post-login redirect below
+        // regardless of whether this is a new or an existing user.
+        const locale = negotiateLocale(request.headers['accept-language']);
+
         let userId = await findOAuthUserId(pool, 'google', identity.sub);
         let isNewUser = false;
         if (!userId) {
           const linked = await linkOrCreateOAuthUser(pool, 'google', identity.sub, {
             email: identity.email,
-            locale: negotiateLocale(request.headers['accept-language']),
+            locale,
             ...(identity.name !== undefined ? { displayName: identity.name } : {}),
           });
           userId = linked.userId;
@@ -189,7 +193,9 @@ export function registerAuthRoutes(app: FastifyInstance): void {
           method: 'google',
         });
 
-        return reply.redirect(config.publicApiUrl);
+        // Back to the actual web app's terminal (P1.2c), never the
+        // gateway's own bare address — see config.ts's webAppOrigin comment.
+        return reply.redirect(`${config.webAppOrigin}/${locale}/terminal`);
       } catch {
         return sendAppError(reply, new AppError('GW-2007', { provider: 'google' }));
       }
@@ -229,12 +235,14 @@ export function registerAuthRoutes(app: FastifyInstance): void {
           );
         }
 
+        const locale = negotiateLocale(request.headers['accept-language']);
+
         let userId = await findOAuthUserId(pool, 'discord', identity.id);
         let isNewUser = false;
         if (!userId) {
           const linked = await linkOrCreateOAuthUser(pool, 'discord', identity.id, {
             email: identity.email,
-            locale: negotiateLocale(request.headers['accept-language']),
+            locale,
             ...(identity.username !== undefined ? { displayName: identity.username } : {}),
           });
           userId = linked.userId;
@@ -250,7 +258,7 @@ export function registerAuthRoutes(app: FastifyInstance): void {
           method: 'discord',
         });
 
-        return reply.redirect(config.publicApiUrl);
+        return reply.redirect(`${config.webAppOrigin}/${locale}/terminal`);
       } catch {
         return sendAppError(reply, new AppError('GW-2007', { provider: 'discord' }));
       }

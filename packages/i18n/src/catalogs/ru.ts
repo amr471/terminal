@@ -92,6 +92,9 @@ export const ru: Catalog = {
   'landing.signup.submit': 'Создать бесплатный аккаунт',
   'landing.signup.error_invalid_email': 'Введите корректный email.',
   'landing.signup.error_password_too_short': 'Минимум 10 символов.',
+  'landing.signup.or_continue_with': 'Или войдите через',
+  'landing.signup.google': 'Войти через Google',
+  'landing.signup.telegram_error': 'Не удалось войти через Telegram. Попробуйте ещё раз.',
 
   // Terminal shell (P1.3)
   'terminal.command_placeholder': 'например, BTC HEAT',

@@ -85,7 +85,12 @@ export default async function LandingPage({ params }: LandingPageProps) {
       <section className="landing__signup" id="signup" aria-label={t(locale, 'auth.sign_up')}>
         <ScrollReveal>
           <h2 className="landing__section-heading">{t(locale, 'landing.signup_heading')}</h2>
-          <SignupForm locale={locale} />
+          <SignupForm
+            locale={locale}
+            {...(process.env.TELEGRAM_BOT_USERNAME !== undefined
+              ? { telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME }
+              : {})}
+          />
         </ScrollReveal>
       </section>
     </main>

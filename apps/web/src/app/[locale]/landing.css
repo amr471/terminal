@@ -243,6 +243,47 @@ body {
   opacity: 0.6;
   cursor: not-allowed;
 }
+/* ── social login (P1.2c) ── */
+.landing__signup-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-md);
+  margin: var(--t-space-lg) 0;
+  color: var(--t-color-text-secondary);
+  font-size: var(--t-font-size-label);
+}
+.landing__signup-divider::before,
+.landing__signup-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--t-color-border-subtle);
+}
+.landing__signup-social {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-md);
+  align-items: stretch;
+}
+.landing__social-button {
+  font: inherit;
+  font-weight: var(--t-font-weight-medium);
+  text-align: center;
+  text-decoration: none;
+  background: var(--t-color-surface-raised);
+  color: var(--t-color-text-primary);
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  padding: var(--t-space-md);
+  transition: border-color 150ms ease;
+}
+.landing__social-button:hover {
+  border-color: var(--t-color-accent-amber);
+}
+.landing__telegram-login {
+  display: flex;
+  justify-content: center;
+}
 /* ── scroll reveal (P1.2b) ── */
 .landing__reveal {
   opacity: 0;

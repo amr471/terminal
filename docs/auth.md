@@ -58,7 +58,9 @@ table:
   is a random token held in Redis (`oauth:state:{state}`, 10 min TTL,
   check-and-consume via `DEL`) to prevent CSRF. Only a **verified** Google
   email is trusted for account linking to an existing password/email user;
-  an unverified email creates/links nothing (GW-2007).
+  an unverified email creates/links nothing (GW-2007). **Frontend (P1.2c):**
+  a plain `<a href="/api/auth/google">` link on the landing page — no client
+  JS needed, it's a full-page navigation through the same-origin proxy.
 - **Discord** (P1.1a): plain OAuth2 authorization-code flow — Discord has no
   OIDC `id_token`, so `discordAuth.ts` uses `fetch()` directly (token
   exchange, then `GET /users/@me`) rather than a client library. Same Redis
@@ -74,9 +76,38 @@ table:
   `services/telegram-bot/migrations/0001_tg_links.sql`): that table is for
   bot alert delivery (chat_id, deep-link verification, P1.13/P2.4), separate
   from "log into the web app with your Telegram account."
+  **Frontend (P1.2c):** `apps/web`'s `TelegramLoginButton` renders the
+  widget in callback mode (`data-onauth`, not `data-auth-url`) so it can
+  `POST /api/auth/telegram` itself through the same-origin proxy rather than
+  needing the backend to accept a GET/query-param variant. Requires
+  `TELEGRAM_BOT_USERNAME` (public, just the bot's `@name`) for the widget's
+  `data-telegram-login` attribute, and **the bot's domain must be authorized
+  via @BotFather's `/setdomain` command** before the widget will render at
+  all on that domain — an account-setup step, not something fixable in code.
 
 Both providers are optional at the env level — if credentials are absent,
 their routes return 401 `GW-2007` instead of the gateway failing to start.
+
+### Post-login redirect (fixed at P1.2c)
+
+Google/Discord's callbacks originally did `reply.redirect(config.publicApiUrl)`
+— sent the browser to the gateway's own bare address after a successful
+login. Harmless at P1.1 (no frontend existed yet to redirect to), but wrong
+once the terminal shipped. Fixed: a new `WEB_APP_ORIGIN` env var (defaults to
+`https://localhost:3000`, the mkcert-backed dev origin) and the callback now
+redirects to `${WEB_APP_ORIGIN}/${locale}/terminal` instead.
+
+This also means each provider's **redirect URI must point through
+`apps/web`'s same-origin `/api/*` proxy** (`next.config.mjs`,
+docs/landing-page.md), not straight at the gateway —
+`https://localhost:3000/api/auth/google/callback`, not
+`http://localhost:8080/auth/google/callback`. Otherwise the `Secure` session
+cookie sets on the gateway's origin, which the browser never sends back on
+subsequent same-origin requests to the web app. `GOOGLE_OAUTH_REDIRECT_URI`/
+`DISCORD_OAUTH_REDIRECT_URI`'s defaults (`config.ts`) already build the
+correct proxied URL from `WEB_APP_ORIGIN`; this only matters if you override
+either explicitly (e.g. for a real deployment) — make sure whatever you
+register in Google/Discord's own developer console matches.
 
 ## Error codes (GW-2001–2009, `@terminal/types`)
 

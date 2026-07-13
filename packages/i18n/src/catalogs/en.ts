@@ -98,6 +98,9 @@ export const en = {
   'landing.signup.submit': 'Create free account',
   'landing.signup.error_invalid_email': 'Enter a valid email address.',
   'landing.signup.error_password_too_short': 'Use at least 10 characters.',
+  'landing.signup.or_continue_with': 'Or continue with',
+  'landing.signup.google': 'Continue with Google',
+  'landing.signup.telegram_error': 'Telegram sign-in failed. Please try again.',
 
   // Terminal shell (P1.3)
   'terminal.command_placeholder': 'e.g. BTC HEAT',
