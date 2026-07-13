@@ -22,6 +22,9 @@ export const ERROR_CODES = {
   'GW-2008': 'Invalid request payload',
   'GW-2009': 'Internal error',
   'GW-2010': 'Invalid layout definition',
+  'GW-2011': 'Cannot close the last tab',
+  'GW-2012': 'Tab not found',
+  'GW-2013': 'Too many tabs open',
   // quant
   'QT-3001': 'Backtest failed',
   'QT-3002': 'Insufficient historical data for range',

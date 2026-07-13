@@ -1,12 +1,17 @@
 import type { Metadata } from 'next';
 import { redirect, notFound } from 'next/navigation';
 import { headers } from 'next/headers';
-import { isLocale, isValidLayoutDefinition, defaultLayoutDefinition, type Locale } from '@terminal/types';
+import {
+  isLocale,
+  defaultLayoutDefinition,
+  type Locale,
+  type TerminalTabSummary,
+} from '@terminal/types';
 import { t } from '@terminal/i18n';
 import { IconRail, StatusBar } from '@terminal/ui';
 import { gatewayUrl } from '../../../lib/gatewayUrl';
 import { TerminalCommandBar } from '../../../components/TerminalCommandBar';
-import { TerminalWorkspace } from '../../../components/TerminalWorkspace';
+import { TerminalTabs } from '../../../components/TerminalTabs';
 
 interface TerminalPageProps {
   params: Promise<{ locale: string }>;
@@ -25,6 +30,12 @@ interface MeResponse {
 
 function isMeResponse(value: unknown): value is MeResponse {
   return typeof value === 'object' && value !== null && 'id' in value;
+}
+
+function isTabsResponse(value: unknown): value is { tabs: TerminalTabSummary[] } {
+  return (
+    typeof value === 'object' && value !== null && Array.isArray((value as { tabs?: unknown }).tabs)
+  );
 }
 
 export default async function TerminalPage({ params }: TerminalPageProps) {
@@ -60,20 +71,32 @@ export default async function TerminalPage({ params }: TerminalPageProps) {
   }
   if (!authorized) redirect(`/${locale}`);
 
-  let initialDefinition = defaultLayoutDefinition();
+  // A single unsaved local tab if the gateway's unreachable — the shell
+  // always needs at least one tab to render. It won't persist server-side
+  // until the gateway comes back and the user interacts with it (autosave
+  // on the active tab re-establishes a real row via PUT /layouts/tabs/:id,
+  // which 404s harmlessly against this placeholder id in the meantime).
+  let tabs: TerminalTabSummary[] = [
+    {
+      id: 'local-fallback',
+      title: 'Main',
+      order: 0,
+      isActive: true,
+      definition: defaultLayoutDefinition(),
+    },
+  ];
   try {
-    const layoutRes = await fetch(gatewayUrl('/layouts/default'), { headers: { cookie }, cache: 'no-store' });
-    if (layoutRes.ok) {
-      const body: unknown = await layoutRes.json();
-      const candidate =
-        typeof body === 'object' && body !== null && 'definition' in body
-          ? (body as { definition: unknown }).definition
-          : null;
-      if (isValidLayoutDefinition(candidate)) initialDefinition = candidate;
+    const tabsRes = await fetch(gatewayUrl('/layouts/tabs'), {
+      headers: { cookie },
+      cache: 'no-store',
+    });
+    if (tabsRes.ok) {
+      const body: unknown = await tabsRes.json();
+      if (isTabsResponse(body) && body.tabs.length > 0) tabs = body.tabs;
     }
   } catch {
     // Gateway unreachable, or malformed response — fall back to the
-    // hardcoded default rather than failing the whole page (CLAUDE.md:
+    // single local tab above rather than failing the whole page (CLAUDE.md:
     // "every third-party feed is assumed unreliable").
   }
 
@@ -84,10 +107,13 @@ export default async function TerminalPage({ params }: TerminalPageProps) {
         <IconRail locale={locale} hrefFor={() => `/${locale}/terminal`} />
         <main className="terminal-shell__main">
           <div className="terminal-shell__command">
-            <TerminalCommandBar locale={locale} placeholder={t(locale, 'terminal.command_placeholder')} />
+            <TerminalCommandBar
+              locale={locale}
+              placeholder={t(locale, 'terminal.command_placeholder')}
+            />
           </div>
           <div className="terminal-shell__workspace">
-            <TerminalWorkspace locale={locale} initialDefinition={initialDefinition} />
+            <TerminalTabs locale={locale} initialTabs={tabs} />
           </div>
         </main>
       </div>

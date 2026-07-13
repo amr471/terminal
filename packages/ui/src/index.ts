@@ -33,9 +33,12 @@ export {
   type WorkspaceGridProps,
   type GridAreaProps,
 } from './components/WorkspaceGrid.js';
-export { IconRail, RAIL_SECTIONS, type IconRailProps, type RailSection } from './components/IconRail.js';
 export {
-  ResizableColumns,
-  type ResizableColumnsProps,
-} from './components/ResizableColumns.js';
+  IconRail,
+  RAIL_SECTIONS,
+  type IconRailProps,
+  type RailSection,
+} from './components/IconRail.js';
+export { ResizableColumns, type ResizableColumnsProps } from './components/ResizableColumns.js';
+export { TabBar, type TabBarProps, type TabBarTab } from './components/TabBar.js';
 export { pixelDeltaToFr, resizeTracks, tracksToCssTemplate } from './resize.js';

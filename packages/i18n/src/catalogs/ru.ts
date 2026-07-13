@@ -99,4 +99,9 @@ export const ru: Catalog = {
   'terminal.panel.screener_body': 'Скринер в реальном времени скоро появится.',
   'terminal.panel.chart_body': 'Графики скоро появятся.',
   'terminal.panel.news_body': 'Лента новостей скоро появится.',
+
+  // Terminal workspace tabs (P1.3a)
+  'terminal.tab.list_label': 'Вкладки терминала',
+  'terminal.tab.new': 'Новая вкладка',
+  'terminal.tab.close': 'Закрыть вкладку',
 };

@@ -1,6 +1,6 @@
 # Database schema — Postgres + TimescaleDB
 
-Status: **Accepted** (F0.3) · Owner: John · Last updated: 2026-07-11
+Status: **Accepted** (F0.3) · Owner: John · Last updated: 2026-07-13
 Companion to `/docs/architecture.md` (ADR-005: single writer per table) and
 `CLAUDE.md` §4/§9. Migrations live with their owning service; `db/migrate.sh`
 sequences them.
@@ -36,11 +36,13 @@ sequences them.
 | 0   | `db/bootstrap/0000_extensions_roles.sql`       | —                  | extensions (timescaledb, citext), 6 roles, default read grants                  |
 | 1   | `api-gateway/0001_users_auth.sql`              | `svc_api_gateway`  | `users`, `oauth_accounts`, `sessions`, `subscriptions`, `api_keys`, `audit_log` |
 | 2   | `api-gateway/0002_screens_layouts_journal.sql` | `svc_api_gateway`  | `screens`, `layouts`, `journal_entries`                                         |
-| 3   | `market-data/0001_hypertables.sql`             | `svc_market_data`  | `candles`ᴴ, `oi`ᴴ, `funding`ᴴ, `liq_events`ᴴ, `instrument_state`                |
-| 4   | `alert-engine/0001_alerts.sql`                 | `svc_alert_engine` | `alerts`, `alert_history`ᴴ                                                      |
-| 5   | `ai/0001_strategies.sql`                       | `svc_ai`           | `strategies`, `agent_configs`                                                   |
-| 6   | `quant/0001_backtests.sql`                     | `svc_quant`        | `backtests`, `strategy_results`                                                 |
-| 7   | `telegram-bot/0001_tg_links.sql`               | `svc_telegram_bot` | `tg_links`                                                                      |
+| 3   | `api-gateway/0003_users_email_nullable.sql`    | `svc_api_gateway`  | `users` (drops `email NOT NULL`, for Telegram-only accounts)                    |
+| 4   | `api-gateway/0004_layout_tabs.sql`             | `svc_api_gateway`  | `layouts` (`is_default`→`is_active`, `+title`, `+sort_order`: P1.3a tabs)       |
+| 5   | `market-data/0001_hypertables.sql`             | `svc_market_data`  | `candles`ᴴ, `oi`ᴴ, `funding`ᴴ, `liq_events`ᴴ, `instrument_state`                |
+| 6   | `alert-engine/0001_alerts.sql`                 | `svc_alert_engine` | `alerts`, `alert_history`ᴴ                                                      |
+| 7   | `ai/0001_strategies.sql`                       | `svc_ai`           | `strategies`, `agent_configs`                                                   |
+| 8   | `quant/0001_backtests.sql`                     | `svc_quant`        | `backtests`, `strategy_results`                                                 |
+| 9   | `telegram-bot/0001_tg_links.sql`               | `svc_telegram_bot` | `tg_links`                                                                      |
 
 ᴴ = hypertable. Order matters: everything FKs to `users`; `backtests` FKs to
 `strategies`. Cross-service FKs are read-side integrity only and don't violate

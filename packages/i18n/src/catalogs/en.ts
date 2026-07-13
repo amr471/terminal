@@ -105,6 +105,11 @@ export const en = {
   'terminal.panel.screener_body': 'Real-time screener is coming soon.',
   'terminal.panel.chart_body': 'Charts are coming soon.',
   'terminal.panel.news_body': 'News feed is coming soon.',
+
+  // Terminal workspace tabs (P1.3a)
+  'terminal.tab.list_label': 'Terminal tabs',
+  'terminal.tab.new': 'New tab',
+  'terminal.tab.close': 'Close tab',
 } satisfies Record<string, Message>;
 
 export type MessageKey = keyof typeof en;

@@ -78,7 +78,9 @@ export function validateLayoutDefinition(def: unknown): string[] {
       }
       const p = panel as Record<string, unknown>;
       if (!(TERMINAL_PANEL_KINDS as readonly string[]).includes(p.kind as string)) {
-        errors.push(`columns[${colIndex}].panels[${panelIndex}].kind: unknown kind ${String(p.kind)}`);
+        errors.push(
+          `columns[${colIndex}].panels[${panelIndex}].kind: unknown kind ${String(p.kind)}`,
+        );
       }
       if (typeof p.size !== 'number' || !Number.isFinite(p.size) || p.size < MIN_TRACK_SIZE_FR) {
         errors.push(
@@ -110,4 +112,32 @@ export function defaultLayoutDefinition(): LayoutDefinition {
       },
     ],
   };
+}
+
+/**
+ * Browser-style workspace tabs (P1.3a, `layouts` table migration 0004):
+ * generalizes P1.3's single saved layout to N named, orderable, closable
+ * tabs — each row in `layouts` is now one tab, carrying its own
+ * `LayoutDefinition`. Shared between the gateway (services/api-gateway/src/
+ * layouts.ts) and the frontend (apps/web) so "what a tab looks like on the
+ * wire" has one definition.
+ */
+export interface TerminalTabSummary {
+  id: string;
+  /** User-facing, renameable label — distinct from the DB's internal `name`. */
+  title: string;
+  /** Position in the tab strip, 0-indexed. */
+  order: number;
+  isActive: boolean;
+  definition: LayoutDefinition;
+}
+
+export const MAX_TAB_TITLE_LENGTH = 40;
+/** Budget guard against unbounded tab creation, same reasoning as MAX_LAYOUT_COLUMNS. */
+export const MAX_TABS_PER_USER = 12;
+
+export function isValidTabTitle(title: unknown): title is string {
+  return (
+    typeof title === 'string' && title.trim().length > 0 && title.length <= MAX_TAB_TITLE_LENGTH
+  );
 }

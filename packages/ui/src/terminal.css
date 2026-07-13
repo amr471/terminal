@@ -244,7 +244,13 @@
 .t-columns {
   display: flex;
   flex-direction: row;
+  /* flex: 1 (not just height: 100%) so this sizes correctly as a direct
+   * flex child of .terminal-shell__workspace now that the tab bar (P1.3a)
+   * sits above it in the same flex column — height: 100% alone doesn't
+   * claim "the rest of the flex column" the way flex: 1 does. */
+  flex: 1 1 auto;
   height: 100%;
+  min-height: 0;
   width: 100%;
   padding: var(--t-space-sm);
   gap: 0;
@@ -280,4 +286,104 @@
   cursor: row-resize;
   margin: calc(-1 * var(--t-space-xs)) 0;
   z-index: 1;
+}
+
+/* ── tab bar (P1.3a) ── */
+.t-tabbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--t-space-xs);
+  height: var(--t-density-row);
+  padding: 0 var(--t-space-sm);
+  background: var(--t-color-surface-base);
+  border-bottom: 1px solid var(--t-color-border-strong);
+  overflow-x: auto;
+}
+.t-tabbar__list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+.t-tabbar__tab {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-xs);
+  max-width: 180px;
+  height: calc(100% - 6px);
+  padding: 0 var(--t-space-sm);
+  margin-top: 6px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--t-radius-sm) var(--t-radius-sm) 0 0;
+  color: var(--t-color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.t-tabbar__tab:hover {
+  color: var(--t-color-text-primary);
+}
+.t-tabbar__tab--active {
+  color: var(--t-color-accent-amber);
+  background: var(--t-color-surface-panel);
+  border-color: var(--t-color-border-subtle);
+}
+.t-tabbar__tab:focus-visible {
+  outline: 2px solid var(--t-color-accent-amber);
+  outline-offset: -2px;
+}
+.t-tabbar__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-font-size-label);
+}
+.t-tabbar__input {
+  width: 110px;
+  background: var(--t-color-surface-raised);
+  border: 1px solid var(--t-color-accent-amber);
+  border-radius: var(--t-radius-sm);
+  color: var(--t-color-text-primary);
+  font: inherit;
+  font-size: var(--t-font-size-label);
+  padding: 0 var(--t-space-xs);
+}
+.t-tabbar__close {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: var(--t-radius-sm);
+  background: transparent;
+  color: var(--t-color-text-muted);
+  line-height: 1;
+  cursor: pointer;
+}
+.t-tabbar__close:hover {
+  color: var(--t-color-direction-down);
+  background: var(--t-color-surface-raised);
+}
+.t-tabbar__new {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  background: transparent;
+  color: var(--t-color-text-secondary);
+  cursor: pointer;
+}
+.t-tabbar__new:hover {
+  color: var(--t-color-accent-amber);
+  border-color: var(--t-color-accent-amber-dim);
 }

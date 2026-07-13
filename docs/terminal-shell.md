@@ -1,10 +1,11 @@
-# Terminal shell (P1.3)
+# Terminal shell (P1.3, tabs added at P1.3a)
 
 The dockable multi-panel workspace behind the session-gated `/[locale]/terminal`
-route: top status bar, left icon rail, command bar, and a resizable panel
-grid with a saved default layout. Placeholder Screener/Chart/News panels —
-the real features land at P1.6–P1.10; this proves the shell mechanics ahead
-of the data, same pattern F0.6 used for market-data (skeleton before feeds).
+route: top status bar, left icon rail, command bar, a browser-style tab strip
+(P1.3a), and a resizable panel grid — each tab carrying its own saved layout.
+Placeholder Screener/Chart/News panels — the real features land at P1.6–P1.10;
+this proves the shell mechanics ahead of the data, same pattern F0.6 used for
+market-data (skeleton before feeds).
 
 ## Layout model — columns of stacked panels, not a general N×M grid
 
@@ -54,21 +55,63 @@ pointer keeps moving. Every drag handle is `role="separator"` with a
 keyboard fallback (arrow keys nudge by a fixed fr step) per the
 accessibility checklist.
 
-## `/layouts/default` — one layout per user, not layout management
+## `/layouts/tabs` — browser-style workspace tabs (P1.3a)
 
-`services/api-gateway/src/layoutRoutes.ts` exposes exactly two endpoints:
+P1.3 shipped `/layouts/default`: exactly one saved layout per user, no
+management UI. P1.3a generalizes that to N named, orderable, closable tabs —
+every row in `layouts` (migration 0004) is now one tab, carrying its own
+`LayoutDefinition`. The old `is_default` boolean and its partial unique index
+become `is_active` / `layouts_one_active_per_user`; the old `name` column
+(internal, unique per user) stays as a server-generated id, and a new `title`
+column is the renameable label the user sees. `sort_order` positions the tab
+in the strip.
 
-- `GET /layouts/default` → `{ definition: LayoutDefinition | null }`
-- `PUT /layouts/default` → validates the body against
-  `validateLayoutDefinition` (GW-2010 if invalid, GW-2008 if the body shape
-  itself is wrong), upserts, always `is_default = true`.
+`services/api-gateway/src/layoutRoutes.ts` exposes:
 
-Both session-authenticated via `requireSession` (same as every other REST
-route). The `layouts` table (migration 0002) supports named, non-default
-layouts and switching between them, but P1.3 only ever writes one row named
-`'default'` per user — the terminal shell needs "the user's current
-workspace," not a layout-management UI. Named layouts + switching is a real
-future feature, not needed yet.
+- `GET /layouts/tabs` → `{ tabs: TerminalTabSummary[] }`, ordered by
+  `sort_order`. Lazily provisions one tab titled `'Main'` for a user with
+  zero tabs (brand-new signup, or — defensively — a user whose tabs were
+  somehow all deleted), so the shell always has something to render. The
+  title matches migration 0004's backfill value for pre-existing P1.3
+  single-layout users, so old and new accounts converge on the same label.
+- `POST /layouts/tabs` → `{ title, definition? }`, creates and activates a
+  new tab (opening a tab switches to it), deactivating whichever tab was
+  active. Rejected past `MAX_TABS_PER_USER` (GW-2013) — a budget guard, same
+  reasoning as `MAX_LAYOUT_COLUMNS`.
+- `PUT /layouts/tabs/:id` → partial update, `{ title? , definition? }`
+  (GW-2008 if neither is present; GW-2012 if the tab isn't found/owned).
+- `PUT /layouts/tabs/:id/activate` → switches which tab is active.
+- `PUT /layouts/tabs/reorder` → `{ order: string[] }`; rejected (GW-2008,
+  no partial write) unless `order` is exactly the user's current tab-id set
+  with no duplicates — a mismatched list is hostile input, same
+  reject-rather-than-partial-clamp stance `resize.ts` takes on the panel
+  grid itself.
+- `DELETE /layouts/tabs/:id` → refuses to delete a user's last tab
+  (GW-2011: the shell always needs at least one). If the deleted tab was
+  active, activates the remaining tab with the smallest `sort_order` and
+  returns its id as `activeTabId` so the client knows where to land.
+
+Every multi-row mutation (create/activate/reorder/delete all touch
+`is_active` and/or `sort_order` across more than one row) runs inside a
+transaction in `services/api-gateway/src/layouts.ts`, same
+`pool.connect()` + `BEGIN`/`COMMIT`/`ROLLBACK` pattern `users.ts`'s
+`linkOrCreateOAuthUser` already uses.
+
+On the frontend, `apps/web/src/components/TerminalTabs.tsx` owns the tab
+list/active-tab state and every mutation above (all fire-and-forget/
+best-effort against the network, same stance as `TerminalWorkspace`'s
+autosave — a dropped request just means the next page load falls back to
+whatever the server last saved). `@terminal/ui`'s `TabBar` is presentational:
+click to activate, double-click to rename inline, a "+" button to open a new
+tab, and — since the standard WAI-ARIA tabs pattern already claims plain
+ArrowLeft/ArrowRight for moving focus between tabs — reordering is
+`Alt+ArrowLeft`/`Alt+ArrowRight` on a focused tab (advertised via
+`aria-keyshortcuts`) rather than a pointer drag-and-drop implementation,
+which was called out and accepted as this task's scope going in.
+`TerminalWorkspace` gained a required `tabId` prop (the autosave target,
+`PUT /layouts/tabs/:tabId`) and is remounted via `key={activeTab.id}` on
+every tab switch, since its `initialDefinition` prop is deliberately only
+read once on mount.
 
 ## Session gating — Server Component, not middleware
 

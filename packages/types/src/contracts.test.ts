@@ -15,6 +15,8 @@ import {
   isValidLayoutDefinition,
   defaultLayoutDefinition,
   MAX_LAYOUT_COLUMNS,
+  isValidTabTitle,
+  MAX_TAB_TITLE_LENGTH,
   type FilterGroup,
   type Envelope,
   type TradePayload,
@@ -191,4 +193,14 @@ test('layout definition validation enforces the column budget (hostile input)', 
     })),
   };
   assert.ok(validateLayoutDefinition(tooWide).length > 0);
+});
+
+test('isValidTabTitle accepts a normal title, rejects blank/oversized/wrong-type', () => {
+  assert.equal(isValidTabTitle('Scalping'), true);
+  assert.equal(isValidTabTitle('a'.repeat(MAX_TAB_TITLE_LENGTH)), true);
+  assert.equal(isValidTabTitle('a'.repeat(MAX_TAB_TITLE_LENGTH + 1)), false);
+  assert.equal(isValidTabTitle(''), false);
+  assert.equal(isValidTabTitle('   '), false);
+  assert.equal(isValidTabTitle(42), false);
+  assert.equal(isValidTabTitle(null), false);
 });
