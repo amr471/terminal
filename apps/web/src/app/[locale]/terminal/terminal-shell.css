@@ -31,6 +31,27 @@
   padding: var(--t-space-sm) var(--t-space-sm) 0;
 }
 
+/* P1.5: wraps CommandBar so the "not built yet" feedback message can be
+   absolutely positioned below it without shifting the workspace layout —
+   it's shown for a few seconds after a command with no real destination
+   yet, then clears itself. */
+.terminal-shell__command-wrap {
+  position: relative;
+}
+
+.terminal-shell__command-message {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin: var(--t-space-xs) 0 0;
+  padding: var(--t-space-xs) var(--t-space-md);
+  font-size: var(--t-font-size-label);
+  color: var(--t-color-text-secondary);
+  background: var(--t-color-surface-overlay);
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+}
+
 .terminal-shell__workspace {
   flex: 1;
   min-height: 0;

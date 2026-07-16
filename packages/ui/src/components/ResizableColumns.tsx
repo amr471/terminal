@@ -339,6 +339,7 @@ function ColumnWithRowHandles({
               <div
                 className={panelClassName}
                 style={{ flex: `${panel.size} ${panel.size} 0%` }}
+                data-panel-kind={panel.kind}
                 onDragOver={onPanelDragOver(coords)}
                 onDrop={onPanelDrop(coords)}
               >

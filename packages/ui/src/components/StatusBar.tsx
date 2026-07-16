@@ -17,6 +17,14 @@ export interface StatusBarProps {
   ticker?: ReactNode;
   /** Hours until the next high-impact event; chip hidden when undefined. */
   nextEventHours?: number;
+  /**
+   * User-selectable secondary clock (P1.4a), rendered next to the fixed NY
+   * clock. StatusBar stays agnostic of what it renders or how its selection
+   * is persisted — same escape-hatch pattern as `ticker` above. Typically a
+   * `<SecondaryClock>` from this package, wired up by a stateful caller
+   * (apps/web's LiveStatusBar).
+   */
+  secondaryClock?: ReactNode;
 }
 
 const SESSION_LABEL_KEY = {
@@ -26,7 +34,13 @@ const SESSION_LABEL_KEY = {
   new_york: 'status.session.new_york',
 } as const;
 
-export function StatusBar({ locale, now = new Date(), ticker, nextEventHours }: StatusBarProps) {
+export function StatusBar({
+  locale,
+  now = new Date(),
+  ticker,
+  nextEventHours,
+  secondaryClock,
+}: StatusBarProps) {
   const clock = nyClock(now);
   const open = new Set<TradingSession>(activeSessions(now));
   const overlapping = new Set<TradingSession>(sessionOverlaps(now).flat());
@@ -37,6 +51,10 @@ export function StatusBar({ locale, now = new Date(), ticker, nextEventHours }: 
         {clock.time}
         <span className="t-statusbar__tz">{clock.abbreviation}</span>
       </span>
+
+      {secondaryClock !== undefined && (
+        <div className="t-statusbar__secondary-clock">{secondaryClock}</div>
+      )}
 
       <ul className="t-statusbar__sessions">
         {TRADING_SESSIONS.map((s) => {

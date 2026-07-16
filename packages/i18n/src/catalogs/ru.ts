@@ -30,6 +30,10 @@ export const ru: Catalog = {
   'status.session.closed': 'Закрыта',
   'status.session.overlap': 'Пересечение',
   'status.next_event': 'Следующее важное событие через {hours}ч',
+  'status.secondary_clock.add': 'Добавить часы',
+  'status.secondary_clock.change': 'Изменить часовой пояс',
+  'status.secondary_clock.picker_label': 'Выберите часовой пояс',
+  'status.secondary_clock.clear': 'Убрать часы',
 
   // Data states
   'data.stale': 'Данные задерживаются на {age}',
@@ -100,6 +104,7 @@ export const ru: Catalog = {
   // Terminal shell (P1.3)
   'terminal.command_placeholder': 'например, BTC HEAT',
   'terminal.resize_handle': 'Изменить размер панели',
+  'terminal.command_not_available': 'Это пока не реализовано — появится на следующем этапе.',
   'terminal.panel.screener_body': 'Скринер в реальном времени скоро появится.',
   'terminal.panel.chart_body': 'Графики скоро появятся.',
   'terminal.panel.news_body': 'Лента новостей скоро появится.',

@@ -26,6 +26,7 @@ export { Panel, type PanelProps } from './components/Panel.js';
 export { NumCell, type NumCellProps } from './components/NumCell.js';
 export { HealthBadge, type HealthBadgeProps } from './components/Badge.js';
 export { StatusBar, type StatusBarProps } from './components/StatusBar.js';
+export { SecondaryClock, type SecondaryClockProps } from './components/SecondaryClock.js';
 export { CommandBar, type CommandBarProps } from './components/CommandBar.js';
 export {
   WorkspaceGrid,
@@ -43,3 +44,9 @@ export { ResizableColumns, type ResizableColumnsProps } from './components/Resiz
 export { TabBar, type TabBarProps, type TabBarTab } from './components/TabBar.js';
 export { pixelDeltaToFr, resizeTracks, tracksToCssTemplate } from './resize.js';
 export { movePanel, type PanelCoords } from './panelOrder.js';
+export {
+  fuzzyScore,
+  rankSuggestions,
+  suggestionsFor,
+  type CommandSuggestion,
+} from './fuzzyCommand.js';

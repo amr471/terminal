@@ -38,7 +38,7 @@ definitions, same reasoning as the screener filter tree's node budget.
 
 `WorkspaceGrid` (F0.5) is a CSS-grid shell using `grid-template-areas`.
 Making that resizable would need gutter tracks inserted between every
-column *and* every row, kept in sync in both dimensions — real machinery
+column _and_ every row, kept in sync in both dimensions — real machinery
 for the same visual result two nested flex axes give directly: columns are
 flex items in a row, each column's panels are flex items in its own nested
 column. `ResizableColumns` (`packages/ui/src/components/ResizableColumns.tsx`)
@@ -115,13 +115,13 @@ read once on mount.
 ### Mouse drag-and-drop reordering (P1.3b)
 
 Layered on top of P1.3a's Alt+ArrowLeft/Right, which stays exactly as-is —
-the accessible fallback this task was scoped to add *alongside*, not
+the accessible fallback this task was scoped to add _alongside_, not
 replace. Native HTML5 drag-and-drop (`draggable` + `onDragStart`/`onDragOver`/
 `onDrop`/`onDragEnd`), no new dependency, same reasoning `ResizableColumns`
 used for its own pointer math rather than pulling in a library.
 
-`TabBar` (packages/ui) only tracks *which* tab is being dragged and *which
-half* of the hovered tab the pointer is over (before/after, from the
+`TabBar` (packages/ui) only tracks _which_ tab is being dragged and _which
+half_ of the hovered tab the pointer is over (before/after, from the
 pointer's x-position against the hovered tab's bounding-rect midpoint) — it
 does not compute the resulting order itself. That stays in `apps/web`'s
 `tabOrder.ts`, same split `onReorder`'s existing `swapAdjacent` already
@@ -134,7 +134,7 @@ Two new pure functions there:
   off-by-one trap in any drag-reorder implementation).
 - `reorderTo(items, id, targetIndex)` — moves one item to an arbitrary
   index, unlike `swapAdjacent`'s single-step neighbor swap; `targetIndex` is
-  defined against the *post-removal* array so callers don't have to.
+  defined against the _post-removal_ array so callers don't have to.
 
 `TerminalTabs.tsx`'s `handleDropReorder` chains the two exactly like
 `handleReorder` chains `swapAdjacent` — compute, optimistically apply,
@@ -158,13 +158,13 @@ it. Moving a panel is still expressed entirely in the existing
 `LayoutDefinition` shape (no schema change): remove it from its source
 column's `panels` array, insert it into the destination column's `panels`
 array at the drop position. **Deliberately scoped to moving a panel into an
-*existing* column/position** — dragging into empty space to create a
+_existing_ column/position** — dragging into empty space to create a
 brand-new column isn't included; a future task if wanted.
 
 The pure array surgery is `movePanel(definition, from, hover, insertAfter)`
 in a new `packages/ui/src/panelOrder.ts`, same "pure math, own tests" split
 `resize.ts` and P1.3b's `tabOrder.ts` both use. Panels have one wrinkle tabs
-didn't: dragging the *last* panel out of a column would leave behind an
+didn't: dragging the _last_ panel out of a column would leave behind an
 empty column, which `validateLayoutDefinition` (packages/types) rejects as
 invalid — so `movePanel` removes that column entirely instead, and the
 remaining columns' space redistributes for free via flex (no rebalancing
@@ -198,6 +198,81 @@ Alt+ArrowLeft/Right to move to the end of the adjacent column (simplest
 predictable behavior — it doesn't try to preserve "the same vertical slot"
 across columns of different lengths, which gets fiddly for little benefit).
 
+## Secondary user-timezone clock (P1.4a)
+
+A second, user-picked clock next to the fixed NY session clock in
+`StatusBar` — the NY clock stays exactly as it was, still the fixed
+session-overlap anchor (CLAUDE.md §5/§8's fixed-clock-vs-user-timezone
+split, restated in `packages/i18n/src/sessions.ts`'s own doc comment: "the
+user's timezone plays no role here").
+
+**Display** reuses existing infrastructure rather than adding new formatting
+logic: `formatTime(tsMs, locale, tz)` (`packages/i18n/src/time.ts`) already
+supported an arbitrary IANA zone, just wasn't wired to any UI yet. The one
+new piece is `isValidTimezone(tz)`, a guard (`Intl.DateTimeFormat` throws
+`RangeError` on a bad zone) used before trusting a value read back out of
+storage.
+
+**Component split**, same shape as the P1.3 status-bar/live-wrapper
+boundary: `StatusBar` (packages/ui) gains an optional `secondaryClock?:
+ReactNode` slot — same escape-hatch pattern its existing `ticker` prop
+already uses, so it stays agnostic and its own session/overlap tests are
+untouched. The actual `SecondaryClock` component (packages/ui) is
+presentational: a button showing "+ Add clock" when nothing's picked, or
+the ticking time + city name once one is; clicking opens a small popover
+with a native `<select>` (not a custom searchable combobox — with ~400 IANA
+zones, the browser's own type-ahead select is already accessible for free).
+The zone list comes from `Intl.supportedValuesOf('timeZone')` at module
+load, with a small hardcoded fallback for runtimes lacking that API.
+
+`SecondaryClock` owns its own popover open/closed state locally (pure UI,
+nothing else needs it) but does _not_ own the selected timezone or its
+persistence — that's lifted to `apps/web/src/components/LiveStatusBar.tsx`
+(already the one stateful piece in this family, ticking the clock every
+second) via `tz`/`onSelectTz`/`onClear` props, and read/written to
+`localStorage` under `terminal.secondaryTz`. The stored value is read
+lazily in a `useEffect` (not a `useState` initializer) so the very first
+client render matches the server-rendered markup before `localStorage` is
+consulted — the same hydration-safety shape `initialNowIso` already uses to
+seed the clock itself.
+
+**Scope call — browser-local, not account-synced.** The chosen timezone
+persists per-browser via `localStorage`, not to the user's account, so it
+won't follow them to a different device or browser. This matches the
+task's "click to open a picker" framing without a new backend
+endpoint/migration/table column for a single client preference. Syncing it
+to the account is a natural, self-contained follow-up if wanted — likely a
+`users.secondary_timezone` column plus a small `PATCH` endpoint, same shape
+as any other user preference, whenever one exists.
+
+**Bug fix (found 2026-07-13, after P1.5 shipped):** John reported the
+timezone picker popover was invisible/unclickable, covered by the command
+bar. Two fixes were needed — the first alone did not resolve it.
+
+_First attempt (insufficient):_ `.t-secondary-clock__popover` was set to the
+same z-index tier as the command bar itself (`--t-layer-command-bar`, 200)
+rather than the dedicated overlay tier (`--t-layer-overlay`, 300) — a
+pre-existing P1.4a mistake. Bumping the popover to `--t-layer-overlay`
+seemed right but did not fix the bug in practice.
+
+_Real root cause:_ `.t-statusbar` itself declared
+`z-index: var(--t-layer-status-bar)` (100). `.t-statusbar` is a flex item of
+`.terminal-shell`, and a flex item with a non-`auto` z-index establishes its
+own stacking context — this caps *every descendant*, including the
+popover, at that context's level (100) when compared against a sibling
+context such as `.t-commandbar` (200). A descendant's own z-index (even
+`--t-layer-overlay`, 300) only wins comparisons *within* its parent's
+stacking context; it can never escape that context to outrank a sibling.
+That's why the first fix had no visible effect — the popover's 300 was
+only ever competing against other elements inside `.t-statusbar`'s own
+context, never against the command bar.
+
+Fixed by removing `z-index: var(--t-layer-status-bar)` from `.t-statusbar`
+entirely (confirmed via grep that this token wasn't relied on elsewhere).
+Without a forced stacking context on the status bar, the popover's own
+`--t-layer-overlay` z-index now compares directly against `.t-commandbar`'s
+200 at the shared top-level context, and wins as intended.
+
 ## Session gating — Server Component, not middleware
 
 `apps/web/src/app/[locale]/terminal/page.tsx` is a Server Component that
@@ -210,7 +285,7 @@ noting for future terminal pages:
   Components would otherwise risk serving one user's session/layout to the
   next request for the same URL.
 - The `/auth/me` fetch is wrapped in try/catch, and `redirect()` is called
-  *after* that block, never inside it. `fetch()` throws on a connection
+  _after_ that block, never inside it. `fetch()` throws on a connection
   failure (not just a non-2xx response), and Next's `redirect()` works by
   throwing its own control-flow signal — catching too broadly around it
   would swallow that signal. An unreachable gateway degrades to "not
@@ -227,13 +302,69 @@ code comment had flagged this as the P1.3 follow-up) instead of showing an
 inline message — the browser already has the `Set-Cookie` from the signup
 response by the time the redirect fires.
 
+## Placeholder news ticker + "next event" chip (P1.4)
+
+`StatusBar`'s `ticker`/`nextEventHours` slots (existing since F0.5) are now
+populated — but with mock data, per TASKS.md's own P1.4 note that these ship
+with placeholder sources first. `apps/web/src/lib/placeholderFeed.ts` holds a
+small bilingual (en/ru) array of illustrative headlines and a handful of
+daily-recurring mock calendar events (`nextPlaceholderEvent(now)` is the pure,
+unit-tested "which one's soonest" math). `LiveStatusBar` rotates the ticker
+headline every 8s and recomputes the event chip once a minute — both
+deliberately omitted from `LiveStatusBarProps` (unlike `StatusBar` itself,
+which still accepts them directly) since this wrapper always computes them,
+never takes them from a caller.
+
+Real data replaces this at P1.9 (news pipeline) and P1.11 (economic
+calendar): `placeholderFeed.ts` is meant to be **deleted**, not extended,
+once that lands — `LiveStatusBar` should swap in a real feed hook in its
+place rather than growing the rotation logic further.
+
+## Fuzzy command palette + destination wiring (P1.5)
+
+`CommandBar` (packages/ui) grew a live suggestion palette on top of its
+existing deterministic `parseCommand` grammar: `fuzzyCommand.ts`'s
+`suggestionsFor(input, symbols)` tokenizes the same way `parseCommand`
+ultimately will, fuzzy-matching (`fuzzyScore` — simple subsequence scoring,
+prefix matches win) against the fixed function-code list and a
+caller-supplied symbol list. Arrow keys move the highlighted suggestion,
+Enter commits it (or falls back to the raw typed text if the palette's been
+dismissed with Escape), mouse click/hover work the same way. `CommandBar`
+stays domain-agnostic about _which_ symbols exist — it takes an optional
+`symbols` prop rather than importing any placeholder data itself, the same
+boundary `TabBar`/`ResizableColumns` already draw against apps/web-owned
+state.
+
+`apps/web/src/lib/placeholderSymbols.ts` supplies that list today: four
+tickers mirroring `db/dev/seed.sql`'s dev-seed `instrument_state` rows
+(BTC/ETH/SOL/AAPL). No real instrument directory is reachable from the
+frontend yet (P1.6's screener query engine / P1.5a's live feeds) — same
+placeholder-now-delete-later stance as P1.4's `placeholderFeed.ts`.
+
+**Destination**, scoped to what's actually built: `TerminalCommandBar`
+(apps/web) maps `CHART`/`NEWS`/`SCREEN` to the three real
+`TerminalPanelKind`s `ResizableColumns` can render, and does a plain
+`document.querySelector('[data-panel-kind="..."]')` (a new attribute
+`ResizableColumns` sets on each panel wrapper) to scroll to and briefly
+highlight a matching panel _if the active tab's layout has one_. This is a
+deliberately decoupled DOM query rather than threading React state across
+from `TerminalTabs` — `CommandBar` and the tab strip are unrelated siblings
+under the server `page.tsx`, and "find the element and scroll to it" isn't
+something that needs to be reactive the way autosave state is. If a layout
+has more than one panel of the same kind, only the first match in DOM order
+gets focused — an acceptable limitation for a single-panel-per-kind default
+layout, revisit if that changes.
+
+`HEAT`/`CAL`/`JRNL`/`AL` (no feature built yet) and any command carrying a
+symbol (no per-instrument view exists before P1.6+) surface a plain
+"not built yet" message (`terminal.command_not_available`, auto-clears
+after a few seconds) instead of the previous silent no-op.
+
 ## Known gaps, deliberately out of scope for P1.3
 
 - **Icon rail links all point at `/terminal`.** Real per-section routes
   arrive with each feature (P1.6 screener, P1.8 charts, P1.9–10 news, ...);
   nothing to link to yet, so nothing is marked "active" either.
-- **Command bar is parse-only.** `onCommand` discards the parsed command —
-  P1.5 gives it a destination.
 - **HTTPS is still disabled locally** (`docs/landing-page.md`'s "Known
   issue" section, unresolved from P1.2a) — the `Secure` session cookie
   won't set over the plain-http dev server, so the auth-gated redirect and

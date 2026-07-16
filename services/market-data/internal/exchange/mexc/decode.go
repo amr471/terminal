@@ -1,0 +1,179 @@
+package mexc
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+
+	"github.com/terminal/market-data/internal/norm"
+)
+
+// flexStr unmarshals a JSON string OR number into a string decimal — MEXC
+// sends prices/quantities/rates as JSON numbers; we keep them as string
+// decimals (architecture.md §4.3, never float64 on the wire).
+type flexStr string
+
+func (s *flexStr) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*s = ""
+		return nil
+	}
+	if b[0] == '"' {
+		var str string
+		if err := json.Unmarshal(b, &str); err != nil {
+			return err
+		}
+		*s = flexStr(str)
+		return nil
+	}
+	*s = flexStr(b)
+	return nil
+}
+
+// envelope is MEXC's push frame: {"channel":"push.deal","symbol":"BTC_USDT",
+// "data":...,"ts":...}. Subscribe acks ("rs.*") and pong ("pong") carry no
+// routable data.
+type envelope struct {
+	Channel string          `json:"channel"`
+	Symbol  string          `json:"symbol"`
+	Data    json.RawMessage `json:"data"`
+	TS      int64           `json:"ts"`
+}
+
+// classify returns the channel, top-level symbol, raw data, and frame ts, or
+// ok=false for anything that isn't a push.* data frame.
+func classify(raw []byte) (channel, symbol string, data json.RawMessage, ts int64, ok bool, err error) {
+	var e envelope
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return "", "", nil, 0, false, fmt.Errorf("mexc: classify: %w", err)
+	}
+	switch e.Channel {
+	case "push.deal", "push.kline", "push.funding.rate":
+		return e.Channel, e.Symbol, e.Data, e.TS, true, nil
+	default:
+		return e.Channel, "", nil, 0, false, nil // rs.* ack / pong / error
+	}
+}
+
+type tradeOut struct {
+	Symbol string
+	TS     int64
+	Trade  norm.Trade
+}
+
+// dealMsg is one element of push.deal's data array. Quantities (v) are in
+// CONTRACTS (package doc). T: 1 buy, 2 sell. t is trade time in ms.
+type dealMsg struct {
+	P  flexStr `json:"p"`
+	V  flexStr `json:"v"`
+	T  int     `json:"T"`
+	I  int64   `json:"i"`
+	Ts int64   `json:"t"`
+}
+
+func decodeDeals(symbol string, data json.RawMessage) ([]tradeOut, error) {
+	var msgs []dealMsg
+	if err := json.Unmarshal(data, &msgs); err != nil {
+		return nil, fmt.Errorf("mexc: decode deal: %w", err)
+	}
+	sym := symbolFromWire(symbol)
+	out := make([]tradeOut, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, tradeOut{
+			Symbol: sym, TS: m.Ts,
+			Trade: norm.Trade{Price: string(m.P), Qty: string(m.V), Side: sideFor(m.T), ID: fmt.Sprintf("%d", m.I)},
+		})
+	}
+	return out, nil
+}
+
+func sideFor(t int) string {
+	if t == 1 {
+		return "buy"
+	}
+	return "sell"
+}
+
+type candleOut struct {
+	Symbol string
+	TS     int64
+	Candle norm.Candle
+}
+
+// klineMsg is push.kline's data. `t` is the window-start time in SECONDS;
+// there is no closed-bucket flag, so Final is set by candleTracker rollover.
+type klineMsg struct {
+	Symbol   string  `json:"symbol"`
+	Interval string  `json:"interval"`
+	O        flexStr `json:"o"`
+	C        flexStr `json:"c"`
+	H        flexStr `json:"h"`
+	L        flexStr `json:"l"`
+	Q        flexStr `json:"q"` // total traded volume
+	A        flexStr `json:"a"` // total traded amount (quote)
+	T        int64   `json:"t"` // window start, seconds
+}
+
+func decodeKline(topSymbol string, data json.RawMessage) (candleOut, error) {
+	var m klineMsg
+	if err := json.Unmarshal(data, &m); err != nil {
+		return candleOut{}, fmt.Errorf("mexc: decode kline: %w", err)
+	}
+	tf, ok := tfForInterval[m.Interval]
+	if !ok {
+		return candleOut{}, fmt.Errorf("mexc: unknown kline interval %q", m.Interval)
+	}
+	sym := m.Symbol
+	if sym == "" {
+		sym = topSymbol
+	}
+	return candleOut{
+		Symbol: symbolFromWire(sym), TS: m.T * 1000, // seconds -> ms
+		Candle: norm.Candle{
+			TF: tf, Open: string(m.O), High: string(m.H), Low: string(m.L),
+			Close: string(m.C), Volume: string(m.Q), QuoteVolume: string(m.A),
+		},
+	}, nil
+}
+
+// fundingMsg is push.funding.rate's data. The sample uses "rate"; the field
+// table calls it "fundingRate" — accept either.
+type fundingMsg struct {
+	FundingRate    flexStr `json:"fundingRate"`
+	Rate           flexStr `json:"rate"`
+	NextSettleTime int64   `json:"nextSettleTime"`
+}
+
+func decodeFunding(symbol string, data json.RawMessage) (string, norm.Funding, error) {
+	var m fundingMsg
+	if err := json.Unmarshal(data, &m); err != nil {
+		return "", norm.Funding{}, fmt.Errorf("mexc: decode funding.rate: %w", err)
+	}
+	rate := m.FundingRate
+	if rate == "" {
+		rate = m.Rate
+	}
+	return symbolFromWire(symbol), norm.Funding{Rate: string(rate), NextFundingTS: m.NextSettleTime}, nil
+}
+
+// candleTracker — MEXC kline has no closed-bucket flag, so a new bucket's
+// start time finalizes the previous bucket (same as HyperLiquid/KuCoin).
+type candleTracker struct {
+	last map[string]candleOut
+}
+
+func newCandleTracker() *candleTracker { return &candleTracker{last: map[string]candleOut{}} }
+
+func (t *candleTracker) observe(c candleOut) (finalized candleOut, hasFinalized bool, live candleOut) {
+	key := c.Symbol + "|" + c.Candle.TF
+	if prev, ok := t.last[key]; ok && c.TS > prev.TS {
+		finalized = prev
+		finalized.Candle.Final = true
+		hasFinalized = true
+	}
+	t.last[key] = c
+	live = c
+	live.Candle.Final = false
+	return finalized, hasFinalized, live
+}

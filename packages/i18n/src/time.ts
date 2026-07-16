@@ -30,6 +30,20 @@ export function formatTime(tsMs: number, locale: Locale, tz: string): string {
   }).format(new Date(tsMs));
 }
 
+/**
+ * Is `tz` a real IANA zone name? Guards against a stale/corrupted stored
+ * preference (P1.4a's secondary clock) before it ever reaches
+ * Intl.DateTimeFormat, which throws RangeError on an invalid zone.
+ */
+export function isValidTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const AGE_UNITS: Record<Locale, { s: string; m: string; h: string; d: string }> = {
   en: { s: 's', m: 'm', h: 'h', d: 'd' },
   ru: { s: 'с', m: 'мин', h: 'ч', d: 'д' },

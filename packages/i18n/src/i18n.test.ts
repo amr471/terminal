@@ -14,6 +14,7 @@ import {
   activeSessions,
   sessionOverlaps,
   nyClock,
+  isValidTimezone,
 } from './index.js';
 
 const NBSP = '\u00a0';
@@ -128,4 +129,15 @@ test('session boundaries are half-open [open, close)', () => {
   assert.equal(isSessionOpen('london', new Date('2026-01-14T08:00:00Z')), true);
   assert.equal(isSessionOpen('london', new Date('2026-01-14T16:59:00Z')), true);
   assert.equal(isSessionOpen('london', new Date('2026-01-14T17:00:00Z')), false);
+});
+
+// ── user-timezone clock (P1.4a) ───────────────────────────────────────────────
+
+test('isValidTimezone accepts real IANA zones and rejects garbage', () => {
+  assert.equal(isValidTimezone('America/New_York'), true);
+  assert.equal(isValidTimezone('Asia/Tokyo'), true);
+  assert.equal(isValidTimezone('UTC'), true);
+  assert.equal(isValidTimezone('Not/AZone'), false);
+  assert.equal(isValidTimezone(''), false);
+  assert.equal(isValidTimezone('garbage-string'), false);
 });

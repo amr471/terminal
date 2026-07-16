@@ -6,6 +6,7 @@ import { decDirection } from './direction.js';
 import { parseCommand } from './command.js';
 import { pixelDeltaToFr, resizeTracks, tracksToCssTemplate } from './resize.js';
 import { movePanel } from './panelOrder.js';
+import { fuzzyScore, rankSuggestions, suggestionsFor } from './fuzzyCommand.js';
 
 // ── WCAG contrast verification (design-token contract) ───────────────────────
 
@@ -168,7 +169,10 @@ test('movePanel: same-column reorder swaps adjacent panels', () => {
     ['news', 'chart'],
   );
   // untouched column is a fresh object, but same shape
-  assert.deepEqual(next.columns[0]!.panels.map((p) => p.kind), ['screener']);
+  assert.deepEqual(
+    next.columns[0]!.panels.map((p) => p.kind),
+    ['screener'],
+  );
 });
 
 test('movePanel: cross-column move empties and removes the source column', () => {
@@ -188,8 +192,14 @@ test('movePanel: hover column after the (now-removed) source column shifts down'
     true,
   );
   assert.equal(next.columns.length, 2);
-  assert.deepEqual(next.columns[0]!.panels.map((p) => p.kind), ['chart']);
-  assert.deepEqual(next.columns[1]!.panels.map((p) => p.kind), ['news', 'screener']);
+  assert.deepEqual(
+    next.columns[0]!.panels.map((p) => p.kind),
+    ['chart'],
+  );
+  assert.deepEqual(
+    next.columns[1]!.panels.map((p) => p.kind),
+    ['news', 'screener'],
+  );
 });
 
 test('movePanel: hover column before the (now-removed) source column needs no shift', () => {
@@ -200,8 +210,14 @@ test('movePanel: hover column before the (now-removed) source column needs no sh
     false,
   );
   assert.equal(next.columns.length, 2);
-  assert.deepEqual(next.columns[0]!.panels.map((p) => p.kind), ['news', 'screener']);
-  assert.deepEqual(next.columns[1]!.panels.map((p) => p.kind), ['chart']);
+  assert.deepEqual(
+    next.columns[0]!.panels.map((p) => p.kind),
+    ['news', 'screener'],
+  );
+  assert.deepEqual(
+    next.columns[1]!.panels.map((p) => p.kind),
+    ['chart'],
+  );
 });
 
 test('movePanel: rejects a cross-column move that would exceed MAX_PANELS_PER_COLUMN', () => {
@@ -232,4 +248,86 @@ test('movePanel: out-of-range coordinates are a no-op rather than throwing', () 
   assert.deepEqual(movePanel(layout, { col: 5, panel: 0 }, { col: 1, panel: 0 }, false), layout);
   assert.deepEqual(movePanel(layout, { col: 0, panel: 0 }, { col: 1, panel: 9 }, false), layout);
   assert.deepEqual(movePanel(layout, { col: 0, panel: 9 }, { col: 1, panel: 0 }, false), layout);
+});
+
+// ── fuzzy command palette (P1.5) ──────────────────────────────────────────
+
+test('fuzzyScore: a prefix match scores 0 (best possible)', () => {
+  assert.equal(fuzzyScore('HE', 'HEAT'), 0);
+  assert.equal(fuzzyScore('', 'HEAT'), 0);
+  assert.equal(fuzzyScore('heat', 'HEAT'), 0); // case-insensitive
+});
+
+test('fuzzyScore: a scattered subsequence match scores worse than a prefix match', () => {
+  const prefix = fuzzyScore('HE', 'HEAT');
+  const scattered = fuzzyScore('AT', 'HEAT');
+  assert.ok(scattered !== null && prefix !== null && scattered > prefix);
+});
+
+test('fuzzyScore: rejects a query that is not a subsequence of the target', () => {
+  assert.equal(fuzzyScore('X', 'HEAT'), null);
+  assert.equal(fuzzyScore('HEATER', 'HEAT'), null); // query longer than target
+});
+
+test('rankSuggestions: prefix matches rank ahead of scattered matches', () => {
+  const candidates = [
+    { id: 'a', kind: 'function' as const, label: 'AL', command: 'AL' },
+    { id: 'b', kind: 'function' as const, label: 'HEAT', command: 'HEAT' },
+    { id: 'c', kind: 'function' as const, label: 'CAL', command: 'CAL' },
+  ];
+  assert.deepEqual(
+    rankSuggestions('AL', candidates).map((s) => s.id),
+    ['a', 'c'], // "AL" is a prefix of AL, a scattered subsequence of CAL; not in HEAT
+  );
+});
+
+test('rankSuggestions: drops non-matching candidates entirely', () => {
+  const candidates = [{ id: 'a', kind: 'function' as const, label: 'NEWS', command: 'NEWS' }];
+  assert.deepEqual(rankSuggestions('ZZZ', candidates), []);
+});
+
+test('rankSuggestions: respects the limit', () => {
+  const candidates = Array.from({ length: 20 }, (_, i) => ({
+    id: `s${i}`,
+    kind: 'symbol' as const,
+    label: `SYM${i}`,
+    command: `SYM${i}`,
+  }));
+  assert.equal(rankSuggestions('SYM', candidates, 3).length, 3);
+});
+
+test('suggestionsFor: empty input has no suggestions', () => {
+  assert.deepEqual(suggestionsFor('', ['BTC']), []);
+  assert.deepEqual(suggestionsFor('   ', ['BTC']), []);
+});
+
+test('suggestionsFor: a single partial token matches both symbols and functions', () => {
+  const results = suggestionsFor('B', ['BTC', 'ETH']);
+  const kinds = results.map((s) => `${s.kind}:${s.label}`);
+  assert.ok(kinds.includes('symbol:BTC'));
+});
+
+test('suggestionsFor: a bare function code still resolves as its own command', () => {
+  const results = suggestionsFor('HEAT', ['BTC']);
+  const heat = results.find((s) => s.label === 'HEAT');
+  assert.ok(heat);
+  assert.equal(heat.command, 'HEAT');
+});
+
+test('suggestionsFor: a completed first token plus a trailing space lists every function', () => {
+  const results = suggestionsFor('BTC ', ['BTC', 'ETH']);
+  assert.equal(results.length, 7); // every COMMAND_FUNCTIONS entry
+  assert.ok(results.every((s) => s.kind === 'function' && s.command.startsWith('BTC ')));
+});
+
+test('suggestionsFor: two tokens fuzzy-match the second against function codes only', () => {
+  const results = suggestionsFor('BTC HE', ['BTC', 'ETH']);
+  assert.deepEqual(
+    results.map((s) => s.command),
+    ['BTC HEAT'],
+  );
+});
+
+test('suggestionsFor: more than two tokens yields no suggestions (parseCommand would reject too)', () => {
+  assert.deepEqual(suggestionsFor('BTC HEAT EXTRA', ['BTC']), []);
 });

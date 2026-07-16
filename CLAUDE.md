@@ -163,6 +163,22 @@ of stacked panels, not a general drag-and-drop grid), the resize
 implementation, the `/layouts/tabs` REST surface, and the session-gating
 approach.
 
+### 6.12 Live feeds + exchange adapters (P1.5a live feeds; P1.5b adapter, implemented)
+
+`services/market-data` ingests exchange websockets, maintains order books,
+persists hypertables + `instrument_state`, and fans out `md.*` (P1.5a:
+Binance/Bybit/OKX). P1.5b made venues pluggable via an `exchange.Adapter`
+contract — a **thin registry + metadata seam** (venue id, symbol mapping,
+provided kinds, connection/rate-limit budget, `Feeds()` construction); each
+venue keeps its own decode/book-gap code. **Adding a venue is one
+`internal/exchange/<venue>` package + one line in main.go's registry.** P1.5b
+shipped HyperLiquid + KuCoin Futures on top of the original three; P1.5d added
+Aster (a Binance clone), MEXC Futures, and BingX — **all eight default venues
+(Binance/Bybit/OKX/HyperLiquid/KuCoin/Aster/MEXC/BingX) now run on the
+adapter.** See `/docs/exchange-adapters.md` for the contract and
+`/docs/market-data-feeds.md` for per-venue wire quirks and the documented
+scope calls.
+
 ---
 
 ## 7. Data sources (verify current terms/pricing before wiring)

@@ -40,6 +40,10 @@ export const en = {
   'status.session.closed': 'Closed',
   'status.session.overlap': 'Overlap',
   'status.next_event': 'Next high-impact event in {hours}h',
+  'status.secondary_clock.add': 'Add clock',
+  'status.secondary_clock.change': 'Change timezone',
+  'status.secondary_clock.picker_label': 'Choose a timezone',
+  'status.secondary_clock.clear': 'Remove clock',
 
   // Data states (graceful degradation, architecture.md §5.6)
   'data.stale': 'Data delayed {age}',
@@ -106,6 +110,7 @@ export const en = {
   // Terminal shell (P1.3)
   'terminal.command_placeholder': 'e.g. BTC HEAT',
   'terminal.resize_handle': 'Resize panel',
+  'terminal.command_not_available': "That's not built yet — coming in a later phase.",
   'terminal.panel.screener_body': 'Real-time screener is coming soon.',
   'terminal.panel.chart_body': 'Charts are coming soon.',
   'terminal.panel.news_body': 'News feed is coming soon.',

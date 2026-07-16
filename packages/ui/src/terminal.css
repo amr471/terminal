@@ -106,7 +106,19 @@
   padding: 0 var(--t-space-lg);
   background: var(--t-color-surface-base);
   border-bottom: 1px solid var(--t-color-border-strong);
-  z-index: var(--t-layer-status-bar);
+  /* No z-index here (was --t-layer-status-bar, 100) — this is a flex item
+     of .terminal-shell, so a non-auto z-index makes it establish its own
+     stacking context, which caps EVERY descendant (including the P1.4a
+     secondary-clock popover) at that level no matter what z-index the
+     descendant itself declares — a nested z-index can never escape its
+     parent's stacking context to out-rank a sibling context like
+     .t-commandbar's 200. That's what made the previous fix (bumping only
+     the popover to --t-layer-overlay) ineffective: the popover's 300 only
+     won locally within this now-removed context, not against the command
+     bar. Nothing else in this file relies on the status bar itself having
+     a fixed stacking tier — removing it lets the popover's own
+     --t-layer-overlay z-index compare directly against everything else
+     on the page, as intended. */
   font-size: var(--t-font-size-label);
   color: var(--t-color-text-secondary);
 }
@@ -120,6 +132,91 @@
   font-size: var(--t-font-size-label);
   color: var(--t-color-text-secondary);
 }
+.t-statusbar__secondary-clock {
+  position: relative;
+}
+.t-secondary-clock {
+  position: relative;
+}
+.t-secondary-clock__toggle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--t-space-sm);
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--t-color-text-secondary);
+  font-size: var(--t-font-size-data);
+  cursor: pointer;
+}
+.t-secondary-clock__toggle:hover {
+  color: var(--t-color-text-primary);
+}
+.t-secondary-clock__toggle:focus-visible {
+  outline: 2px solid var(--t-color-accent-amber);
+  outline-offset: 2px;
+}
+.t-secondary-clock__city {
+  font-size: var(--t-font-size-label);
+  color: var(--t-color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.t-secondary-clock__add {
+  font-size: var(--t-font-size-label);
+  color: var(--t-color-text-muted);
+  text-transform: none;
+}
+.t-secondary-clock__popover {
+  position: absolute;
+  top: calc(100% + var(--t-space-sm));
+  left: 0;
+  /* Was --t-layer-command-bar (200) — same tier as the command bar itself,
+     which sits directly below the status bar in the layout. Same z-index
+     ties break by DOM order, and the command bar (rendered later) won,
+     covering this popover whenever the two occupied the same screen
+     region (P1.5 made the command bar's own box more prominent, which is
+     what made this pre-existing P1.4a bug visible). Popovers belong at
+     the dedicated overlay tier, above every other layer, not tied with
+     whatever happens to sit below the status bar. */
+  z-index: var(--t-layer-overlay);
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-sm);
+  min-width: 220px;
+  padding: var(--t-space-sm);
+  background: var(--t-color-surface-overlay);
+  border: 1px solid var(--t-color-border-strong);
+  border-radius: var(--t-radius-sm);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+}
+.t-secondary-clock__select {
+  width: 100%;
+  padding: var(--t-space-xs) var(--t-space-sm);
+  background: var(--t-color-surface-raised);
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  color: var(--t-color-text-primary);
+  font: inherit;
+  font-size: var(--t-font-size-label);
+}
+.t-secondary-clock__select:focus-visible {
+  outline: 2px solid var(--t-color-accent-amber);
+}
+.t-secondary-clock__clear {
+  padding: var(--t-space-xs) var(--t-space-sm);
+  background: transparent;
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  color: var(--t-color-text-secondary);
+  font-size: var(--t-font-size-label);
+  cursor: pointer;
+}
+.t-secondary-clock__clear:hover {
+  color: var(--t-color-direction-down);
+  border-color: var(--t-color-direction-down);
+}
+
 .t-statusbar__sessions {
   display: flex;
   gap: var(--t-space-lg);
@@ -156,6 +253,7 @@
 
 /* ── command bar ── */
 .t-commandbar {
+  position: relative; /* anchors the P1.5 suggestion palette below */
   display: flex;
   align-items: center;
   gap: var(--t-space-md);
@@ -190,6 +288,44 @@
 .t-commandbar:focus-within {
   border-color: var(--t-color-accent-amber);
   box-shadow: 0 0 0 3px var(--t-color-accent-amber-glow);
+}
+
+/* Fuzzy suggestion palette (P1.5) */
+.t-commandbar__suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: var(--t-space-xs) 0 0;
+  padding: var(--t-space-xs) 0;
+  list-style: none;
+  background: var(--t-color-surface-overlay);
+  border: 1px solid var(--t-color-border-strong);
+  border-radius: var(--t-radius-sm);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+  z-index: var(--t-layer-overlay);
+}
+.t-commandbar__suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--t-space-md);
+  padding: var(--t-space-xs) var(--t-space-lg);
+  font-family: var(--t-font-mono);
+  color: var(--t-color-text-primary);
+  cursor: pointer;
+}
+.t-commandbar__suggestion--active {
+  background: var(--t-color-accent-amber-dim);
+  color: var(--t-color-accent-amber);
+}
+.t-commandbar__suggestion-kind {
+  font-size: var(--t-font-size-label);
+  letter-spacing: 0.08em;
+  color: var(--t-color-text-muted);
+}
+.t-commandbar__suggestion--active .t-commandbar__suggestion-kind {
+  color: var(--t-color-accent-amber);
 }
 
 /* ── workspace grid ── */
@@ -286,6 +422,13 @@
 }
 .t-columns__panel--drop-after {
   box-shadow: inset 0 -2px 0 0 var(--t-color-accent-amber);
+}
+/* Command-bar "jump to panel" flash (P1.5) — briefly marks the panel a
+   CHART/NEWS/SCREEN command scrolled to, same amber accent as the other
+   panel-focus cues rather than introducing a new color. */
+.t-columns__panel--jump-highlight {
+  box-shadow: inset 0 0 0 2px var(--t-color-accent-amber);
+  transition: box-shadow 0.2s ease-out;
 }
 .t-resize-handle {
   flex: none;

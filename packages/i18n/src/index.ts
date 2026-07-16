@@ -37,7 +37,7 @@ export {
   shiftDec,
   type FormatDecOptions,
 } from './format.js';
-export { formatDateTime, formatTime, formatAge } from './time.js';
+export { formatDateTime, formatTime, formatAge, isValidTimezone } from './time.js';
 export {
   SESSION_WINDOWS,
   isSessionOpen,
