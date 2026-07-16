@@ -29,6 +29,7 @@ import "strings"
 
 const (
 	wsBase       = "wss://contract.mexc.com/edge"
+	restBase     = "https://contract.mexc.com"
 	exchangeName = "mexc"
 )
 

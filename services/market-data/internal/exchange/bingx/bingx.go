@@ -27,6 +27,7 @@ import "strings"
 
 const (
 	wsBase       = "wss://open-api-swap.bingx.com/swap-market"
+	restBase     = "https://open-api.bingx.com"
 	exchangeName = "bingx"
 
 	// bookLevel / bookInterval: the partial-depth snapshot stream offers

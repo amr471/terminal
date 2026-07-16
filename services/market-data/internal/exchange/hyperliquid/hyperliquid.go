@@ -30,7 +30,8 @@
 package hyperliquid
 
 const (
-	wsBase = "wss://api.hyperliquid.xyz/ws"
+	wsBase  = "wss://api.hyperliquid.xyz/ws"
+	infoURL = "https://api.hyperliquid.xyz/info"
 
 	exchangeName = "hyperliquid"
 )

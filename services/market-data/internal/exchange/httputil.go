@@ -1,0 +1,35 @@
+package exchange
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+)
+
+// FetchJSON does a GET and decodes the JSON body into v. Shared by venue
+// Instruments() implementations (P1.5c discovery). Bounded body read; a
+// non-200 is an error the supervisor retries on the next cycle.
+func FetchJSON(ctx context.Context, client *http.Client, url string, v any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("exchange: build request %s: %w", url, err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("exchange: GET %s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return fmt.Errorf("exchange: read %s: %w", url, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("exchange: GET %s: status %d", url, resp.StatusCode)
+	}
+	if err := json.Unmarshal(body, v); err != nil {
+		return fmt.Errorf("exchange: decode %s: %w", url, err)
+	}
+	return nil
+}

@@ -277,6 +277,55 @@ Binance, Bybit, OKX (P1.5a/b) · HyperLiquid, KuCoin (P1.5b) · Aster, MEXC,
 BingX (P1.5d). Adding the next venue remains one `internal/exchange/<venue>`
 package + one registry line.
 
+## Dynamic instrument universe (P1.5c)
+
+P1.5a's static `MARKET_DATA_SYMBOLS` is replaced by a supervisor
+(`internal/supervisor`) that discovers each venue's live instrument list,
+shards it across connections, and starts/stops feeds at runtime as symbols
+list and delist. `MARKET_DATA_SYMBOLS`, if set, is now an **optional static
+override** (handy for local dev / CI so we don't poll eight REST endpoints or
+open hundreds of connections); left empty, the supervisor runs.
+
+**Discovery.** Each `exchange.Adapter` gained `Instruments(ctx) ([]string,
+error)` — a REST call to the venue's instrument endpoint, filtered to live
+USDT perpetuals and returned as normalized symbols. Endpoints (all **VERIFY**
+against live docs — response shapes were written from knowledge, defensively
+filtered; a wrong shape yields an empty list and that venue simply gets no
+feeds, never a crash): Binance/Aster `/fapi/v1/exchangeInfo`, Bybit
+`/v5/market/instruments-info?category=linear`, OKX
+`/api/v5/public/instruments?instType=SWAP`, KuCoin `/api/v1/contracts/active`,
+MEXC `/api/v1/contract/detail`, BingX `/openApi/swap/v2/quote/contracts`,
+HyperLiquid `POST /info {"type":"meta"}`.
+
+**Sharding (stable by hash).** Each venue also gained `StreamsPerSymbol()`;
+shard size = `Limits().MaxStreamsPerConn / StreamsPerSymbol`. The number of
+shard *slots* is fixed from the `MAX_SYMBOLS_PER_VENUE` cap (not the current
+count), and a symbol maps to a slot by hash — so a listing/delisting only
+disturbs the one shard it hashes into, never the whole venue (no mass
+resubscribe). A shard of symbols is one `Adapter.Feeds(shard)` call → one
+multiplexed connection (the P1.5c book refactor is what makes this true: books
+ride the ws feed, so there's no per-symbol book connection to explode).
+
+**Runtime lifecycle.** One discovery goroutine per venue owns that venue's
+running-shards map (no lock). Each shard's managers run under a per-shard
+context that is a child of the venue context; a membership change cancels the
+old shard (which closes its connections via `conn.Manager`) and starts a fresh
+one, and supervisor shutdown cancels everything and waits for the managers to
+exit — no leaked goroutines or sockets. The placement decisions (`shardSize`,
+`shardCount`, `assignShards`, `planReconcile`) are pure and unit-tested apart
+from the goroutine machinery.
+
+**Prune.** When a symbol delists, the supervisor calls `Aggregator.Forget`
+(a `supervisor.Pruner`): it drops the in-memory instrument_state + book, the
+`cache:ticker`/`cache:book` Redis keys, and the `instrument_state` Postgres row
+so the screener never shows dead instruments. Hypertables (candles/funding/oi)
+are append-only history and kept.
+
+**Config:** `MAX_SYMBOLS_PER_VENUE` (default 200 — bounds connection and
+Postgres load; the true "every perpetual" universe is thousands), and
+`DISCOVERY_INTERVAL` (default 5m). Their metadata inputs (`Limits()`,
+`StreamsPerSymbol()`) carry VERIFY markers to tune before lifting the cap.
+
 ## Grows at
 
 P1.6 (screener reads `instrument_state`), P1.7b (best-price correlates venues

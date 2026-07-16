@@ -39,8 +39,10 @@ func (a fakeAdapter) WireSymbol(symbol string) (string, bool) {
 	}
 	return a.name + ":" + symbol, true
 }
-func (a fakeAdapter) ProvidedKinds() []string { return a.kinds }
-func (a fakeAdapter) Limits() Limits          { return a.limits }
+func (a fakeAdapter) ProvidedKinds() []string                       { return a.kinds }
+func (a fakeAdapter) Limits() Limits                                { return a.limits }
+func (a fakeAdapter) StreamsPerSymbol() int                         { return 1 }
+func (a fakeAdapter) Instruments(context.Context) ([]string, error) { return nil, nil }
 func (a fakeAdapter) Feeds(symbols []string, _ *slog.Logger) []conn.Feed {
 	var out []conn.Feed
 	for _, s := range symbols {

@@ -28,7 +28,8 @@
 package okx
 
 const (
-	wsBase = "wss://ws.okx.com:8443/ws/v5/public"
+	wsBase   = "wss://ws.okx.com:8443/ws/v5/public"
+	restBase = "https://www.okx.com"
 
 	exchangeName = "okx"
 )

@@ -11,6 +11,7 @@
 package exchange
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/terminal/market-data/internal/conn"
@@ -50,6 +51,21 @@ type Adapter interface {
 	// doesn't list (WireSymbol ok=false). The caller registers whatever is
 	// returned, one conn.Manager per feed.
 	Feeds(symbols []string, log *slog.Logger) []conn.Feed
+
+	// StreamsPerSymbol is how many multiplexed ws streams one symbol adds to
+	// a connection (trades + candles + book + funding/oi that ride the ws
+	// feed — NOT separate REST pollers). The P1.5c supervisor sizes a shard
+	// at Limits().MaxStreamsPerConn / StreamsPerSymbol. Return a positive
+	// count even for venues whose MaxStreamsPerConn is 0 (unbounded), so the
+	// number is available if a cap is added later.
+	StreamsPerSymbol() int
+
+	// Instruments returns the venue's live tradable symbols — normalized
+	// (norm.NormalizeSymbol form, USDT perpetuals only) — from its REST
+	// instrument-list endpoint. The P1.5c supervisor polls this to discover
+	// the universe and detect listings/delistings. A transient error is the
+	// caller's to retry on the next cycle; it must not be fatal.
+	Instruments(ctx context.Context) ([]string, error)
 }
 
 // Limits describes a venue's connection budget. Zero values mean "unknown /

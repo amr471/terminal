@@ -20,6 +20,7 @@ import (
 type fakeWriter struct {
 	mu         sync.Mutex
 	upserts    []InstrumentState
+	deletes    []string // exchange|symbol
 	candles    []CandleRow
 	fundings   []FundingRow
 	ois        []OIRow
@@ -40,6 +41,12 @@ func (f *fakeWriter) UpsertInstrumentState(_ context.Context, s InstrumentState)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.upserts = append(f.upserts, s)
+	return nil
+}
+func (f *fakeWriter) DeleteInstrumentState(_ context.Context, exchange, symbol string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletes = append(f.deletes, exchange+"|"+symbol)
 	return nil
 }
 func (f *fakeWriter) InsertCandle(_ context.Context, c CandleRow) error {
@@ -159,6 +166,36 @@ func TestAggregator_OnTrade_UpdatesPriceAndTickerCache(t *testing.T) {
 	ttl := mr.TTL("cache:ticker:binance:btcusdt")
 	if ttl <= 0 || ttl > 10*time.Second {
 		t.Errorf("ticker cache TTL = %v, want (0,10s]", ttl)
+	}
+}
+
+func TestAggregator_Forget_ClearsStateCachesAndRow(t *testing.T) {
+	agg, fw, _, mr := newTestAggregator(t)
+	ctx := context.Background()
+
+	env := norm.Envelope{V: 1, Type: norm.TypeTrade, Src: "binance", Sym: "btcusdt", TS: 1000}
+	agg.OnTrade(ctx, "binance", "btcusdt", env, norm.Trade{Price: "64000", Qty: "1", Side: "buy"})
+	agg.OnBook(ctx, "binance", "btcusdt", env, norm.Book{Bids: [][2]string{{"63999", "1"}}, Asks: [][2]string{{"64001", "1"}}, Snapshot: true})
+	if _, err := mr.Get("cache:ticker:binance:btcusdt"); err != nil {
+		t.Fatal("precondition: ticker cache should exist")
+	}
+
+	agg.Forget(ctx, "binance", "btcusdt")
+
+	agg.mu.Lock()
+	_, hasState := agg.states[key("binance", "btcusdt")]
+	_, hasBook := agg.books[key("binance", "btcusdt")]
+	agg.mu.Unlock()
+	if hasState || hasBook {
+		t.Fatalf("in-memory state not cleared: state=%v book=%v", hasState, hasBook)
+	}
+	if mr.Exists("cache:ticker:binance:btcusdt") || mr.Exists("cache:book:binance:btcusdt") {
+		t.Fatal("redis cache keys not deleted on forget")
+	}
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+	if len(fw.deletes) != 1 || fw.deletes[0] != "binance|btcusdt" {
+		t.Fatalf("instrument_state delete = %v, want [binance|btcusdt]", fw.deletes)
 	}
 }
 

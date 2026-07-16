@@ -231,6 +231,26 @@ func (a *Aggregator) writeTickerCache(ctx context.Context, exchange, symbol stri
 	}
 }
 
+// Forget drops all state for a symbol that has delisted (P1.5c): the in-memory
+// instrument_state + local book, the Redis cache:ticker/cache:book keys, and
+// the Postgres instrument_state row. The hypertables (candles/funding/oi) are
+// append-only history and deliberately kept. Safe to call for a symbol we
+// never saw. Implements supervisor.Pruner.
+func (a *Aggregator) Forget(ctx context.Context, exchange, symbol string) {
+	k := key(exchange, symbol)
+	a.mu.Lock()
+	delete(a.states, k)
+	delete(a.books, k)
+	a.mu.Unlock()
+
+	if err := a.redis.Del(ctx, tickerCacheKey(exchange, symbol), bookCacheKey(exchange, symbol)).Err(); err != nil {
+		a.log.Warn("store: delete cache keys on forget", "err", err, "exchange", exchange, "sym", symbol)
+	}
+	if err := a.w.DeleteInstrumentState(ctx, exchange, symbol); err != nil {
+		a.log.Error("store: delete instrument_state on forget", "err", err, "exchange", exchange, "sym", symbol)
+	}
+}
+
 // Run starts the flush and recompute loops; blocks until ctx is cancelled.
 func (a *Aggregator) Run(ctx context.Context) {
 	go a.flushLoop(ctx)

@@ -17,6 +17,10 @@ import (
 // database, following this repo's skip-if-unreachable convention.
 type writer interface {
 	UpsertInstrumentState(ctx context.Context, s InstrumentState) error
+	// DeleteInstrumentState removes a symbol's row when it delists (P1.5c), so
+	// the screener never shows dead instruments. Deleting a missing row is a
+	// no-op, not an error.
+	DeleteInstrumentState(ctx context.Context, exchange, symbol string) error
 	InsertCandle(ctx context.Context, c CandleRow) error
 	InsertFunding(ctx context.Context, f FundingRow) error
 	InsertOI(ctx context.Context, o OIRow) error
@@ -105,6 +109,14 @@ func (p *Postgres) UpsertInstrumentState(ctx context.Context, s InstrumentState)
 		decStrOrNil(s.FundingRate), decStrOrNil(s.Volatility24h), decStrOrNil(s.Spread), s.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("store: upsert instrument_state %s/%s: %w", s.Exchange, s.Symbol, err)
+	}
+	return nil
+}
+
+func (p *Postgres) DeleteInstrumentState(ctx context.Context, exchange, symbol string) error {
+	_, err := p.pool.Exec(ctx, `DELETE FROM instrument_state WHERE exchange = $1 AND symbol = $2`, exchange, symbol)
+	if err != nil {
+		return fmt.Errorf("store: delete instrument_state %s/%s: %w", exchange, symbol, err)
 	}
 	return nil
 }
