@@ -31,3 +31,6 @@ apps/web/certificates/
 .DS_Store
 *.log
 coverage/
+
+# editor/linter temp backups (e.g. decode.go.1234567890)
+*.go.[0-9]*
