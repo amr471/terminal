@@ -18,6 +18,15 @@ Each exchange gets 2–3 `conn.Feed` implementations, each its own
 | Bybit | `bybit.ws` (trades+candles+tickers[funding+OI], all symbols multiplexed), `bybit.book.{symbol}` (one per symbol) | `tickers` channel carries funding *and* OI together — no poller needed. |
 | OKX | `okx.ws` (trades+candles+funding-rate+open-interest, all symbols multiplexed), `okx.book.{symbol}` (one per symbol) | Same as Bybit — OI is a websocket channel here too. |
 
+> **This table is P1.5a-era and stale on book topology** (P1.5c multiplexed
+> books into each venue's `*.ws` feed instead of per-symbol `*.book.{symbol}`
+> feeds — see "Sharding" below). It's also stale on Binance specifically as
+> of 2026-07-17: `binance.ws` is now trades+candles+funding only, and a
+> second feed `binance.ws.depth` (partial-depth book) runs alongside it on
+> its own connection — see "Real bugs found + fixed" below for why. Left
+> as-is rather than rewritten in full to avoid asserting current book-feed
+> shape for OKX/Bybit without re-verifying them too.
+
 **Order books are always their own per-symbol `Feed`, never multiplexed
 into the trades/candles connection.** `conn.Manager` tracks exactly one
 `lastSeq` counter per Manager instance (`internal/conn/manager.go`) and calls
@@ -248,6 +257,60 @@ channels/symbol (deal + funding + 6 klines) the static 3-symbol MVP fits one
 connection (24), but the full universe won't — the first venue P1.5c must
 shard (reads `Adapter.Limits()`).
 
+**Real bug found + fixed (2026-07-17):** production logs showed recurring
+`"decode deal: json: cannot unmarshal string into Go struct field
+dealMsg.i of type int64"` — MEXC sends the deal id (`i`) as a JSON *string*
+for some deals, not consistently as a number. `decodeDeals` unmarshals the
+whole batch in one `json.Unmarshal` call, so a single bad-shaped `i` failed
+the entire frame, dropping every trade in it, not just the offending one.
+Fixed by declaring `dealMsg.I` as `flexStr` (the same JSON-string-or-number
+type already used for `p`/`v` on this struct) instead of `int64` — `i` was
+only ever converted to a string ID afterward anyway, so there was no real
+reason to force it through `int64` in the first place. Regression test:
+`TestDecodeDeals_StringDealID`.
+
+## Backpressure ("dropped message; consumer too slow") — expected, not a bug, but worth knowing the lever
+
+Every venue's `WSFeed.emit` pushes onto a buffered channel (`f.msgs`, size
+256) with a non-blocking `select`/`default` — if the single consumer
+goroutine (`conn.Manager.consume`, which calls the sink synchronously per
+message) can't drain it fast enough, new messages are dropped rather than
+blocking the read loop, logged as `"dropped message; consumer too slow"`.
+This is ADR-004's documented lossy-by-design stance for `md.*`, not new
+behavior — but two things make it worth flagging: (1) it recurs
+persistently for `hyperliquid` (funding/oi) and `bingx` (book/trades) under
+real load, meaning the 256-message buffer is undersized relative to how
+many symbols those two venues' single shared connection multiplexes; (2)
+unlike trades (where losing one update is harmless — the next one
+supersedes it), a dropped `oi`/`funding` message leaves that field stale
+until the *next* update fires, which is a plausible contributor to sparse-
+looking Open Interest data. Not fixed this round — the real fix is either a
+bigger buffer (cheap, just delays the problem) or moving the sink call off
+the single per-feed consumer goroutine (a bigger architectural change,
+worth a real discussion before building). Flagged here rather than
+silently building either without agreeing on the approach first.
+
+## "context canceled" bursts on shutdown/restart — expected, same root cause class as the WaitGroup fix above
+
+A burst of `"store: flush instrument_state failed... context canceled"`
+(Postgres) and `"fetch open interest failed... context canceled"`
+(binance's OI REST poller) landing together, all sharing the exact same
+`context canceled` reason, is the signature of one shared `ctx` cancellation
+event — i.e. the process was stopped (SIGINT) while those operations were
+in flight. This is different from the earlier crossed-book-adjacent bug:
+those calls already correctly respect `ctx` and abort promptly when it's
+cancelled, which is the *correct* behavior for a graceful shutdown — an
+in-flight Postgres upsert or HTTP request can't finish "for free" just
+because the process is shutting down gracefully; something has to interrupt
+it. The `sync.WaitGroup` fix above's job was narrower: guarantee nothing
+touches an *already-closed* Redis/Postgres client, not guarantee every
+in-flight write completes. These logs are therefore expected noise around
+any restart, not a new bug — though logging them at `ERROR` rather than a
+quieter level during a confirmed shutdown could be revisited if the noise
+itself becomes a problem (not done here, since distinguishing "shutdown in
+progress" from "this connection genuinely failed" at each call site is
+non-trivial and wasn't asked for).
+
 ### BingX (`internal/exchange/bingx`, P1.5d)
 
 `wss://open-api-swap.bingx.com/swap-market` (swapV2). Two BingX-specific
@@ -325,6 +388,113 @@ are append-only history and kept.
 Postgres load; the true "every perpetual" universe is thousands), and
 `DISCOVERY_INTERVAL` (default 5m). Their metadata inputs (`Limits()`,
 `StreamsPerSymbol()`) carry VERIFY markers to tune before lifting the cap.
+
+## Real bug found + fixed: shutdown closed Redis before feeds stopped writing (2026-07-17)
+
+John reported a burst of near-identical log lines on shutdown — `"redis:
+client is closed"` errors from `store: write ticker cache`/`store: write book
+cache` (multiple venues) landing at the same millisecond as `"read error;
+feed will reconnect"` / `"use of closed network connection"` warnings from
+those same venues' feeds. Root cause: `cmd/market-data/main.go` started
+`agg.Run(ctx)`, `publisher.Heartbeat(ctx, ...)`, and either
+`sup.Run(ctx)`/`registerFeeds`'s per-feed `mgr.Run(ctx)` goroutines with a
+bare `go` and never joined any of them before returning — `main()`'s
+deferred `client.Close()`/`pg.Close()` ran the instant `<-ctx.Done()` +
+`srv.Shutdown()` finished, racing every feed/aggregator goroutine that was
+independently reacting to the same `ctx` cancellation and tearing down its
+own websocket. A goroutine mid-teardown could still be flushing one last
+write to Redis at the exact instant the deferred `Close()` fired.
+
+Every one of those goroutines already returns promptly on `ctx.Done()`
+(`Manager.Run`, `Aggregator.Run`, `Redis.Heartbeat`, `Supervisor.Run` all
+`select` on it — this wasn't a "goroutine never exits" bug), so the fix is
+purely about *waiting* for that exit before closing shared clients: a
+top-level `sync.WaitGroup` in `main()` that every one of those goroutines
+joins, `wg.Wait()`'d (with a 10s bounded fallback, since nothing here is
+expected to hang) between `srv.Shutdown()` and the function returning.
+`registerFeeds` (the static-`MARKET_DATA_SYMBOLS` path) now takes the
+`*sync.WaitGroup` as a parameter so its per-feed managers are tracked the
+same way. `go build`/`go vet`/`gofmt` clean; `go test ./... -race` — every
+package still passes, 0 fail (this file has no test file of its own, it's
+pure goroutine-lifecycle wiring, not additional pure logic to unit test).
+
+## Real bugs found + fixed: OKX message-too-big and Binance's legacy WS endpoint decommission (2026-07-17)
+
+John ran `go run ./cmd/market-data` live and pasted the first ~7 seconds of
+output: repeated `websocket: close 1009 (message too big)` from OKX and
+`websocket: close 1008 (policy violation): Invalid request` from Binance,
+alongside one `"http: server gave HTTP response to HTTPS client"` discovery
+failure from Aster. All three are addressed below; the OKX/Binance ones are
+the more direct explanation for "not all the coins are there" than the
+backpressure-buffer fix earlier in this doc, since these two venues were
+failing to hold a connection at all under real 200-symbol shard load.
+
+**OKX — 1009, fixed.** `okx/adapter.go`'s `Limits()` has carried
+`MaxStreamsPerConn: 0` (shard math treats 0 as uncapped) with a "VERIFY the
+current numbers before P1.5c sharding" comment since that section landed —
+never resolved. At a real 200-symbol/`StreamsPerSymbol()`=10 shard, that's
+~2000 subscribe args, all sent in one `{"op":"subscribe","args":[...]}`
+message. Verified against OKX's v5 docs 2026-07-17: there's no documented cap
+on how many channels one *connection* may hold, but there is a hard 4096-byte
+cap on any single SUBSCRIBE *message's* argument payload, plus a 3-req/s (480/hr)
+subscribe rate limit — our one giant message was ~10x over the byte cap, and
+OKX's server rejected it outright. Fixed without touching shard size (it
+didn't need to shrink): `okx/decode.go` gained `subscribeBatches`, which
+splits the arg list into chunks that each marshal under ~3800 bytes (measured
+per-arg via `json.Marshal`, not estimated), and `okx/ws.go` gained
+`subscribeAll`, which writes those batches ~400ms apart (comfortably under
+3 req/s) and is `ctx`-aware so a shutdown mid-subscribe doesn't block on the
+pacing sleep. `WSFeed.Connect` now starts `readLoop`/`pingLoop` *before*
+calling `subscribeAll` (previously subscribe-then-start-reading) — a
+multi-second batched subscribe means OKX starts acking/pushing data for
+early batches while later ones are still being sent, and nothing was
+draining the connection during that window before this fix. `Resync` batches
+the same way. `okx/adapter.go`'s `Limits()` doc comment now records the
+verified numbers instead of carrying the open VERIFY.
+
+**Binance — 1008, fixed.** This one wasn't a sharding bug at all: Binance
+migrated USDS-M futures websockets from a single unrouted
+`wss://fstream.binance.com/ws` to three routed bases —
+`/public` (book/bookTicker), `/market` (aggTrade/markPrice/kline/ticker),
+`/private` (user data) — and, per their "Important WebSocket Change Notice",
+**decommissioned the legacy unrouted URLs on 2026-04-23**. Today is
+2026-07-17: every Binance connection this service opened was hitting a URL
+that no longer exists, hence the policy-violation close on every single
+shard regardless of how well-sized they were (shard math itself was correct
+— `MaxStreamsPerConn: 200` even undersold the venue's real 1024-streams/conn
+cap, so shards were never the problem). Fixed by splitting `WSFeed` (still
+`aggTrade`+`markPrice`+`kline`, now dialing `wss://fstream.binance.com/market/ws`)
+and a new `DepthFeed` (`binance.ws.depth`, just the partial-depth stream,
+dialing `wss://fstream.binance.com/public/ws`) — two connections per shard
+now instead of one, since a single connection can only receive one route's
+data. `binance/adapter.go`'s `Feeds()` returns both alongside the existing
+REST OI poller. `StreamsPerSymbol()` dropped from 9 to 8 (aggTrade+markPrice+
+6 klines; depth's 1-stream cost moved to `DepthFeed` and is low enough
+relative to `MaxStreamsPerConn` that sizing shards off the market
+connection's cost alone keeps both connections safely under budget). Also
+corrected `Limits().MaxStreamsPerConn` from a stale 200 to the verified
+current 1024 — unrelated to the 1008s (the old 200 was conservative, not
+wrong-direction), but flagged VERIFY since P1.5c and worth fixing alongside
+everything else touched here. Binance's 24-hour "connection is only valid for
+24 hours; expect to be disconnected" limit is unchanged and already handled
+by `conn.Manager`'s reconnect loop.
+
+**Aster — likely not a bug.** The one `"http: server gave HTTP response to
+HTTPS client"` discovery failure didn't recur in the pasted log, and
+`aster/aster.go`'s `restBase` is already `https://fapi.asterdex.com` (correct
+scheme) — so this reads as a transient issue on Aster's side, not a client
+bug. Nothing to fix; the existing "instrument discovery failed; keeping
+current shards" degradation path already handled it gracefully (no crash, no
+lost shards). Worth another look if it recurs.
+
+Verified: `go build ./...`, `go vet ./...`, `gofmt -l .` clean; `go test
+./... -race -count=1` — every package passes, 0 fail, including new tests for
+`subscribeBatches` (byte-cap correctness at 200-symbol scale) and the split
+`WSFeed`/`DepthFeed` topology. Not yet verified: a live re-run against the
+real exchanges (this fix was built and unit-tested in the sandbox, which has
+no outbound access to Binance/OKX's actual websocket endpoints) — John still
+needs to run `go run ./cmd/market-data` again and confirm the 1008/1009
+closes are gone before this counts as confirmed fixed in production.
 
 ## Grows at
 

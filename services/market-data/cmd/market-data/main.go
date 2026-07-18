@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -60,6 +61,17 @@ func main() {
 		DiscoveryInterval:  envDuration("DISCOVERY_INTERVAL", 5*time.Minute),
 	}
 
+	// wg tracks every background goroutine below that still writes to `client`
+	// (Redis) or `pg` (Postgres) once started, so shutdown can wait for all of
+	// them to actually stop before the deferred client.Close()/pg.Close() run.
+	// Without this, ctx cancellation tears down feed websockets and closes the
+	// shared clients concurrently and independently — a feed goroutine mid-
+	// teardown can still be writing to Redis at the exact instant the deferred
+	// Close() fires, producing "redis: client is closed" store-write errors
+	// racing "closed network connection" feed read errors at the same
+	// millisecond (found via a real run's logs, 2026-07-17).
+	var wg sync.WaitGroup
+
 	states := health.NewRegistry()
 	client := redis.NewClient(&redis.Options{Addr: redisAddr})
 	defer func() { _ = client.Close() }()
@@ -84,7 +96,11 @@ func main() {
 	var pruner supervisor.Pruner // aggregator prunes delisted symbols (P1.5c); nil without Postgres
 	if pg != nil {
 		agg := store.NewAggregator(pg, client, log)
-		go agg.Run(ctx)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			agg.Run(ctx)
+		}()
 		sink = store.NewFanoutSink(publisher, agg, log)
 		pruner = agg
 	} else {
@@ -92,7 +108,11 @@ func main() {
 	}
 
 	// Health heartbeat: 5s beat, 15s TTL (§5.5).
-	go publisher.Heartbeat(ctx, service, states, 5*time.Second)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		publisher.Heartbeat(ctx, service, states, 5*time.Second)
+	}()
 
 	// The venue registry (P1.5b). Adding a venue is one line here plus its
 	// own internal/exchange/<venue> package — see docs/exchange-adapters.md.
@@ -114,10 +134,14 @@ func main() {
 	// runtime as symbols list/delist. See docs/market-data-feeds.md.
 	if len(staticSymbols) > 0 {
 		log.Info("static symbol mode (MARKET_DATA_SYMBOLS set)", "symbols", staticSymbols)
-		registerFeeds(ctx, registry, staticSymbols, sink, states, log)
+		registerFeeds(ctx, &wg, registry, staticSymbols, sink, states, log)
 	} else {
 		sup := supervisor.New(registry, sink, states, pruner, log, nil, supCfg)
-		go sup.Run(ctx)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sup.Run(ctx)
+		}()
 		log.Info("dynamic universe supervisor started",
 			"max_per_venue", supCfg.MaxSymbolsPerVenue, "discovery_interval", supCfg.DiscoveryInterval)
 	}
@@ -140,6 +164,24 @@ func main() {
 	shutdownCtx, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel2()
 	_ = srv.Shutdown(shutdownCtx)
+
+	// Wait for every feed/aggregator/heartbeat goroutine tracked in wg to
+	// actually return before the deferred client.Close()/pg.Close() run —
+	// see the wg comment above. Bounded: everything tracked here already
+	// returns promptly on ctx.Done() (Manager.Run, Aggregator.Run,
+	// Redis.Heartbeat, Supervisor.Run all select on it), so this is a safety
+	// net against a future goroutine that doesn't, not the expected path.
+	drained := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(drained)
+	}()
+	select {
+	case <-drained:
+		log.Info("shutdown: all feeds drained")
+	case <-time.After(10 * time.Second):
+		log.Warn("shutdown: background goroutines did not drain in time; closing shared clients anyway")
+	}
 }
 
 // registerFeeds starts one conn.Manager per feed, each its own goroutine,
@@ -149,10 +191,14 @@ func main() {
 // Book feeds are one per (exchange,symbol) — see each exchange package's doc
 // for why (Manager.checkSeq needs per-symbol scoping); trades/candles/
 // funding(+OI) are multiplexed per exchange across every symbol.
-func registerFeeds(ctx context.Context, registry *exchange.Registry, symbols []string, sink conn.Sink, states *health.Registry, log *slog.Logger) {
+func registerFeeds(ctx context.Context, wg *sync.WaitGroup, registry *exchange.Registry, symbols []string, sink conn.Sink, states *health.Registry, log *slog.Logger) {
 	for _, feed := range registry.Feeds(symbols, log) {
 		mgr := conn.NewManager(feed, sink, states, log)
-		go mgr.Run(ctx)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mgr.Run(ctx)
+		}()
 	}
 }
 

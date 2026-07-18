@@ -561,3 +561,314 @@
   color: var(--t-color-accent-amber);
   border-color: var(--t-color-accent-amber-dim);
 }
+
+/* ── screener panel (P1.7) ── */
+.t-screener {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-md);
+  height: 100%;
+  min-height: 0;
+  /* Flex items default to min-width: auto (their content's natural size),
+     which blocks the panel resize handle from dragging narrower than that —
+     harmless when the table's own layout was `auto` (it could always
+     shrink), but a real block since BestPriceTable's `table-layout: fixed`
+     columns (see terminal.css's fixed-column-width comment) gave the table
+     a genuine minimum content width. min-width: 0 here (and on
+     .t-screener__table-wrap below) lets the panel shrink to whatever the
+     user drags to; .t-screener__scroll's own overflow: auto then puts a
+     horizontal scrollbar on the table instead of refusing to shrink at all. */
+  min-width: 0;
+}
+.t-screener__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--t-space-sm);
+}
+.t-screener__picker,
+.t-screener__btn {
+  background: var(--t-color-surface-raised);
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  color: var(--t-color-text-primary);
+  font: inherit;
+  font-size: var(--t-font-size-label);
+  padding: var(--t-space-xs) var(--t-space-md);
+  cursor: pointer;
+}
+.t-screener__btn:disabled {
+  color: var(--t-color-text-muted);
+  cursor: default;
+  opacity: 0.6;
+}
+.t-screener__btn--primary {
+  border-color: var(--t-color-accent-amber-dim);
+  color: var(--t-color-accent-amber);
+}
+.t-screener__columns-picker,
+.t-screener__save-as {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--t-space-md);
+  padding: var(--t-space-sm) 0;
+}
+.t-screener__column-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--t-space-xs);
+  font-size: var(--t-font-size-label);
+  color: var(--t-color-text-secondary);
+}
+.t-screener__apply-row {
+  display: flex;
+  justify-content: flex-end;
+}
+.t-screener__table-wrap {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.t-screener__scroll {
+  height: 100%;
+  overflow: auto;
+}
+.t-screener__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-font-size-data);
+}
+.t-screener__table thead {
+  position: sticky;
+  top: 0;
+  z-index: var(--t-layer-panel);
+  background: var(--t-color-surface-panel);
+}
+.t-screener__th {
+  padding: var(--t-space-sm) var(--t-space-md);
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--t-color-border-subtle);
+}
+.t-screener__th:first-child {
+  text-align: left;
+}
+.t-screener__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--t-space-xs);
+  background: transparent;
+  border: none;
+  color: var(--t-color-text-secondary);
+  font: inherit;
+  font-size: var(--t-font-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+.t-screener__sort:hover,
+.t-screener__sort--active {
+  color: var(--t-color-accent-amber);
+}
+.t-screener__sort-arrow {
+  font-size: 9px;
+}
+.t-screener__row {
+  border-bottom: 1px solid var(--t-color-border-subtle);
+}
+.t-screener__row:hover {
+  background: var(--t-color-surface-raised);
+}
+.t-screener__td {
+  padding: 0 var(--t-space-md);
+  height: var(--t-density-row);
+}
+.t-screener__text {
+  font-family: var(--t-font-mono);
+  color: var(--t-color-text-primary);
+}
+.t-num--empty {
+  color: var(--t-color-text-muted);
+}
+.t-screener__empty {
+  padding: var(--t-space-xl);
+  text-align: center;
+  color: var(--t-color-text-muted);
+}
+
+/* ── fixed column widths (P1.7b best-price table — see BestPriceTable.tsx's
+   COLUMN_WIDTH_PX comment: auto table-layout reflows column widths to match
+   whichever rows are currently mounted, which visibly jumps/collapses
+   content while scrolling a virtualized table). Cell text is clipped with
+   an ellipsis rather than wrapping, since a wrapped cell would grow past
+   the virtualizer's fixed rowHeightPx assumption and desync the spacer-row
+   math. ── */
+.t-screener__table--fixed {
+  table-layout: fixed;
+}
+.t-screener__table--fixed .t-screener__th,
+.t-screener__table--fixed .t-screener__td {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ── venue badge (P1.7b best-price table — which exchange won this side) ── */
+.t-screener__venue {
+  font-family: var(--t-font-mono);
+  font-size: var(--t-font-size-label);
+  text-transform: uppercase;
+  color: var(--t-color-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+/* ── running-line reveal for overflowing cell content (MarqueeText.tsx —
+   2026-07-17 report: "if the text doesn't fit in the column, I want it to
+   be a running line"). Every cell in ScreenerTable/BestPriceTable is
+   wrapped in this instead of relying on the td's own ellipsis: on hover,
+   if the content actually overflows its box, scroll left to reveal the
+   clipped end, pause, then scroll back. Static (non-overflowing) content
+   pays nothing — the animation class is only added once JS measures a
+   real overflow, so a dense table isn't paying for animation on every row
+   at once. ── */
+.t-marquee {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+.t-marquee__inner {
+  display: inline-block;
+  white-space: nowrap;
+}
+.t-marquee--overflowing:hover .t-marquee__inner {
+  animation: t-marquee-scroll 3.5s ease-in-out infinite;
+}
+@keyframes t-marquee-scroll {
+  0%,
+  8% {
+    transform: translateX(0);
+  }
+  45%,
+  55% {
+    transform: translateX(calc(-1 * var(--t-marquee-distance, 0px)));
+  }
+  92%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* ── filter builder (P1.7) ── */
+.t-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-md);
+}
+.t-filter__group {
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  padding: var(--t-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-sm);
+}
+.t-filter__group--root {
+  border: none;
+  padding: 0;
+}
+.t-filter__group .t-filter__group {
+  background: var(--t-color-surface-raised);
+}
+.t-filter__group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.t-filter__logic {
+  display: inline-flex;
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  overflow: hidden;
+}
+.t-filter__logic-btn {
+  background: transparent;
+  border: none;
+  color: var(--t-color-text-secondary);
+  font-size: var(--t-font-size-label);
+  padding: var(--t-space-xs) var(--t-space-md);
+  cursor: pointer;
+}
+.t-filter__logic-btn--active {
+  background: var(--t-color-accent-amber-glow);
+  color: var(--t-color-accent-amber);
+}
+.t-filter__children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--t-space-sm);
+}
+.t-filter__condition {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-sm);
+}
+.t-filter__select,
+.t-filter__value {
+  background: var(--t-color-surface-raised);
+  border: 1px solid var(--t-color-border-subtle);
+  border-radius: var(--t-radius-sm);
+  color: var(--t-color-text-primary);
+  font: inherit;
+  font-size: var(--t-font-size-label);
+  padding: var(--t-space-xs) var(--t-space-sm);
+}
+.t-filter__value {
+  width: 96px;
+}
+.t-filter__select--multi {
+  min-width: 120px;
+}
+.t-filter__group-actions {
+  display: flex;
+  gap: var(--t-space-sm);
+}
+.t-filter__add {
+  background: transparent;
+  border: 1px dashed var(--t-color-border-strong);
+  border-radius: var(--t-radius-sm);
+  color: var(--t-color-text-secondary);
+  font-size: var(--t-font-size-label);
+  padding: var(--t-space-xs) var(--t-space-md);
+  cursor: pointer;
+}
+.t-filter__add:hover {
+  color: var(--t-color-accent-amber);
+  border-color: var(--t-color-accent-amber-dim);
+}
+.t-filter__remove {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--t-radius-sm);
+  background: transparent;
+  color: var(--t-color-text-muted);
+  cursor: pointer;
+}
+.t-filter__remove:hover {
+  color: var(--t-color-direction-down);
+  background: var(--t-color-surface-raised);
+}
+.t-filter__errors {
+  color: var(--t-color-direction-down);
+  font-size: var(--t-font-size-label);
+  margin: 0;
+  padding-left: var(--t-space-lg);
+}

@@ -64,11 +64,19 @@ type tradeOut struct {
 
 // dealMsg is one element of push.deal's data array. Quantities (v) are in
 // CONTRACTS (package doc). T: 1 buy, 2 sell. t is trade time in ms.
+//
+// I (the deal id) is declared flexStr, not int64: MEXC sends it as a JSON
+// number for most deals but a JSON string for others (found 2026-07-17 —
+// "decode deal: json: cannot unmarshal string into Go struct field
+// dealMsg.i of type int64", recurring in production, not a one-off). It was
+// only ever used to build a string ID (fmt.Sprintf("%d", m.I)) so there was
+// no real reason to round-trip through int64 in the first place — flexStr
+// (already used for p/v below) accepts either wire shape directly.
 type dealMsg struct {
 	P  flexStr `json:"p"`
 	V  flexStr `json:"v"`
 	T  int     `json:"T"`
-	I  int64   `json:"i"`
+	I  flexStr `json:"i"`
 	Ts int64   `json:"t"`
 }
 
@@ -82,7 +90,7 @@ func decodeDeals(symbol string, data json.RawMessage) ([]tradeOut, error) {
 	for _, m := range msgs {
 		out = append(out, tradeOut{
 			Symbol: sym, TS: m.Ts,
-			Trade: norm.Trade{Price: string(m.P), Qty: string(m.V), Side: sideFor(m.T), ID: fmt.Sprintf("%d", m.I)},
+			Trade: norm.Trade{Price: string(m.P), Qty: string(m.V), Side: sideFor(m.T), ID: string(m.I)},
 		})
 	}
 	return out, nil

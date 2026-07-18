@@ -316,7 +316,7 @@ test('suggestionsFor: a bare function code still resolves as its own command', (
 
 test('suggestionsFor: a completed first token plus a trailing space lists every function', () => {
   const results = suggestionsFor('BTC ', ['BTC', 'ETH']);
-  assert.equal(results.length, 7); // every COMMAND_FUNCTIONS entry
+  assert.equal(results.length, 8); // every COMMAND_FUNCTIONS entry
   assert.ok(results.every((s) => s.kind === 'function' && s.command.startsWith('BTC ')));
 });
 

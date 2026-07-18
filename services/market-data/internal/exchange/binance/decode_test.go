@@ -19,20 +19,13 @@ func TestDecodePartialDepthSnapshot(t *testing.T) {
 	}
 }
 
-func TestSubscribeParamsIncludesDepth(t *testing.T) {
-	p := subscribeParams([]string{"btcusdt"})
-	// aggTrade + markPrice + depth20 + 6 klines = 9.
-	if len(p) != 9 {
-		t.Fatalf("params = %d, want 9: %v", len(p), p)
+func TestDepthSubscribeParams(t *testing.T) {
+	p := depthSubscribeParams([]string{"btcusdt", "ethusdt"})
+	if len(p) != 2 {
+		t.Fatalf("params = %d, want 2: %v", len(p), p)
 	}
-	var sawDepth bool
-	for _, s := range p {
-		if s == "btcusdt@depth20@100ms" {
-			sawDepth = true
-		}
-	}
-	if !sawDepth {
-		t.Fatalf("missing depth stream in %v", p)
+	if p[0] != "btcusdt@depth20@100ms" || p[1] != "ethusdt@depth20@100ms" {
+		t.Fatalf("params = %v", p)
 	}
 }
 
@@ -114,9 +107,9 @@ func TestClassify_UnknownFrameIsNotAnError_ButHasNoEvent(t *testing.T) {
 	}
 }
 
-func TestSubscribeParams_CoversAllChannelsPerSymbol(t *testing.T) {
-	params := subscribeParams([]string{"btcusdt", "ethusdt"})
-	want := len(timeframes) + 3 // aggTrade + markPrice + depth + N klines, per symbol
+func TestMarketSubscribeParams_CoversAllChannelsPerSymbol(t *testing.T) {
+	params := marketSubscribeParams([]string{"btcusdt", "ethusdt"})
+	want := len(timeframes) + 2 // aggTrade + markPrice + N klines, per symbol (depth moved to depthSubscribeParams)
 	if len(params) != want*2 {
 		t.Fatalf("len(params) = %d, want %d", len(params), want*2)
 	}
@@ -132,5 +125,8 @@ func TestSubscribeParams_CoversAllChannelsPerSymbol(t *testing.T) {
 		if !has(want) {
 			t.Errorf("missing subscribe param %q", want)
 		}
+	}
+	if has("btcusdt@depth20@100ms") {
+		t.Error("depth stream should not be in marketSubscribeParams — it moved to depthSubscribeParams (/public route)")
 	}
 }

@@ -9,10 +9,15 @@ import (
 	"github.com/terminal/market-data/internal/norm"
 )
 
-// StreamsPerSymbol: aggTrade + markPrice + depth<N> + one kline per timeframe.
-// The REST OI poller is a separate feed, not a ws stream, so it doesn't count
-// against the ws connection's stream budget (P1.5c sharding).
-func (adapter) StreamsPerSymbol() int { return 3 + len(timeframes) }
+// StreamsPerSymbol: aggTrade + markPrice + one kline per timeframe — the
+// per-symbol cost of WSFeed's /market connection. depth<N> moved to its own
+// /public connection (DepthFeed) at the 2026-07-17 routing split (package
+// doc, binance.go) and is no longer counted here: shard sizing uses this
+// number for both feeds' shards, and WSFeed's per-symbol cost (2+len(tf)) is
+// higher than DepthFeed's (1), so sizing to the larger number keeps both
+// connections under Limits().MaxStreamsPerConn. The REST OI poller is a
+// separate feed, not a ws stream, so it doesn't count against either budget.
+func (adapter) StreamsPerSymbol() int { return 2 + len(timeframes) }
 
 // exchangeInfo is the subset of GET /fapi/v1/exchangeInfo we filter on.
 // (Aster uses the identical Binance-clone shape — see aster/discovery.go.)

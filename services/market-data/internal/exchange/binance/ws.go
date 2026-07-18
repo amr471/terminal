@@ -33,7 +33,7 @@ type WSFeed struct {
 var _ conn.Feed = (*WSFeed)(nil)
 
 func NewWSFeed(symbols []string, log *slog.Logger) *WSFeed {
-	return &WSFeed{symbols: symbols, wsURL: wsBase, log: log.With("feed", "binance.ws")}
+	return &WSFeed{symbols: symbols, wsURL: wsMarketBase, log: log.With("feed", "binance.ws")}
 }
 
 func (f *WSFeed) Name() string { return "binance.ws" }
@@ -49,7 +49,7 @@ func (f *WSFeed) Connect(ctx context.Context) error {
 		return err
 	}
 	if err := c.WriteJSON(map[string]any{
-		"method": "SUBSCRIBE", "params": subscribeParams(f.symbols), "id": 1,
+		"method": "SUBSCRIBE", "params": marketSubscribeParams(f.symbols), "id": 1,
 	}); err != nil {
 		_ = c.Close()
 		return fmt.Errorf("binance.ws: subscribe: %w", err)
@@ -99,13 +99,6 @@ func (f *WSFeed) handle(raw []byte) {
 			return
 		}
 		f.emit(symbol, norm.KindFunding, "", norm.TypeFunding, ts, funding)
-	case "depthUpdate":
-		symbol, ts, book, err := decodePartialDepth(raw)
-		if err != nil {
-			f.log.Warn("decode partial depth failed", "err", err)
-			return
-		}
-		f.emit(symbol, norm.KindBook, "", norm.TypeBook, ts, book)
 	}
 }
 
@@ -133,7 +126,7 @@ func (f *WSFeed) Resync(ctx context.Context) error {
 		return nil
 	}
 	if err := f.conn.WriteJSON(map[string]any{
-		"method": "SUBSCRIBE", "params": subscribeParams(f.symbols), "id": 2,
+		"method": "SUBSCRIBE", "params": marketSubscribeParams(f.symbols), "id": 2,
 	}); err != nil {
 		return fmt.Errorf("binance.ws: resync resubscribe: %w", err)
 	}

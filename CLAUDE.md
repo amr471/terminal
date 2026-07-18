@@ -184,6 +184,53 @@ now an optional static override; `MAX_SYMBOLS_PER_VENUE` (default 200) +
 for per-venue wire quirks, the dynamic-universe design, and documented scope
 calls / VERIFY markers.
 
+### 6.13 Screener query engine + UI (P1.6 engine, P1.7 UI, implemented)
+
+Deterministic `field·operator·value` filter tree (AND/OR groups) over the
+market-data `instrument_state`, evaluated by a pure kernel in `@terminal/types`
+(exact scaled-BigInt decimal compare, nulls never match, default `volume_24h`
+desc sort) — **no LLM on the evaluation path**. The gateway holds an in-memory
+working set polled from `instrument_state` (default 2s, decoupled from the
+`md.*` firehose) behind a REST `/screener/query` + `/screens` CRUD surface and
+live WS `screener.subscribe` deltas on the same `/ws` socket. Saved screens
+live in the `screens` table; the three §6.1 presets are code-defined. See
+`/docs/screener.md` for the filter model + validation budget, the
+polled-working-set rationale, the REST/WS wire protocol, and scope calls.
+
+P1.7 is the frontend: a virtualized sortable table (real `<table>` +
+spacer-row windowing, no new dependency), a recursive AND/OR filter-tree
+editor, per-browser column config, CSV export, and saved-screens
+management — all in `ScreenerPanel`, replacing the terminal shell's
+placeholder screener panel. It's also the app's first WebSocket client
+(`apps/web/src/lib/gatewaySocket.ts`), connecting through the existing
+same-origin `/api/*` proxy so the session cookie round-trips. See
+`/docs/screener-ui.md` for the wire-client design, the draft-then-apply
+filter UX, and scope calls (export format, column-config persistence,
+saved-screen rename deferred) — including a verification gap (whether the
+dev HTTPS proxy forwards the WS upgrade) that needs confirming on a real
+machine.
+
+### 6.13a Consolidated best price / top-of-book (P1.7b, implemented)
+
+Scalpboard.io-style live view: across every connected venue, per symbol, the
+best bid/ask and the top-of-book size at that price. Distinct row shape from
+the screener's — one row per **symbol** (not per exchange-symbol pair), the
+winning venue folded in as a field. Order books are Redis-only
+(`cache:book:*`, §9/schema.md §5 — never Postgres), so a new gateway
+`BestPriceHub` (mirroring `ScreenerHub`'s polling shape) combines a light
+`instrument_state` poll (which venues list which symbol) with one batched
+Redis `MGET` across every relevant `cache:book:{exchange}:{symbol}` key per
+tick, picks the highest bid / lowest ask across venues (`compareDec`, never
+float), and pushes live `bestprice.subscribe` deltas on the same `/ws`
+socket — identical payload to every subscriber, since there's no
+per-subscriber filter here. `apps/web`'s `gatewaySocket.ts` generalized from
+screener-only to feature-agnostic multiplexing to carry this. Surfaced as a
+new dedicated panel kind (not folded into the Screener table), reachable via
+the command bar's `BEST` function. See `/docs/best-price.md` for the full
+architecture, the wire contract, and a flagged scope call (no "add panel to
+an existing layout" UI exists yet, so `defaultLayoutDefinition()` grew a
+third column for this panel rather than shipping it unreachable).
+
 ---
 
 ## 7. Data sources (verify current terms/pricing before wiring)

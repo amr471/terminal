@@ -53,7 +53,11 @@ func (f *WSFeed) Connect(ctx context.Context) error {
 		return err
 	}
 	f.conn = c
-	f.msgs = make(chan conn.RawMsg, 256)
+	// 1024, not the 256 other venues default to: this feed multiplexes
+	// funding+oi across every symbol on one connection, and real-load logs
+	// (2026-07-17) showed persistent "dropped message; consumer too slow"
+	// here — 256 was undersized for the burst size at a real symbol count.
+	f.msgs = make(chan conn.RawMsg, 1024)
 	f.candles = newCandleTracker()
 	loopCtx, cancel := context.WithCancel(ctx)
 	f.cancel = cancel

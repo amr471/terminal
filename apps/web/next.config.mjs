@@ -15,6 +15,27 @@ const nextConfig = {
   async rewrites() {
     return [{ source: '/api/:path*', destination: `${GATEWAY_ORIGIN}/:path*` }];
   },
+  // P1.7 UI: apps/web's own src/lib files use NodeNext-style relative
+  // imports with an explicit `.js` extension (inherited from
+  // @terminal/tsconfig/base.json, and required for the `.js`-extension
+  // pattern node's own ESM loader needs when tsconfig.test.json compiles
+  // them to real .js files for `node --test`). tsc's "bundler"
+  // moduleResolution already knows to resolve that `.js` specifier back to
+  // the sibling `.ts` source, but webpack — the bundler `next dev`/`next
+  // build` actually run — doesn't do that rewrite by default, so any
+  // src/lib file that imports another sibling src/lib file (first hit at
+  // P1.7 by useScreenerSubscription.ts -> gatewaySocket.ts/
+  // screenerReducer.ts, once ScreenerPanel.tsx pulled it into the app's
+  // real webpack graph) 404s in the browser build with "Module not found".
+  // This alias makes webpack fall back to `.ts`/`.tsx` the same way tsc
+  // already does, instead of forcing every src/lib file onto one dual
+  // import-extension convention.
+  webpack(config) {
+    config.resolve.extensionAlias = {
+      '.js': ['.ts', '.tsx', '.js'],
+    };
+    return config;
+  },
 };
 
 export default nextConfig;

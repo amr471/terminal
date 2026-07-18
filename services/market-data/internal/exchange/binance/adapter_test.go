@@ -20,14 +20,16 @@ func TestAdapterWireSymbol(t *testing.T) {
 
 func TestAdapterFeedTopology(t *testing.T) {
 	a := Adapter()
-	// ws (multiplexed, incl. partial-depth book) + oi = 2, regardless of
-	// symbol count — books are no longer per-symbol feeds (P1.5c).
+	// ws (market: trades+candles+funding) + ws.depth (public: partial-depth
+	// book) + oi = 3, regardless of symbol count — books are no longer
+	// per-symbol feeds (P1.5c), and depth split off ws into its own routed
+	// connection at the 2026-07-17 /public vs /market migration.
 	feeds := a.Feeds([]string{"btcusdt", "ethusdt", "solusdt"}, testLog())
-	if len(feeds) != 2 {
-		t.Fatalf("Feeds len = %d, want 2 (ws + oi)", len(feeds))
+	if len(feeds) != 3 {
+		t.Fatalf("Feeds len = %d, want 3 (ws + ws.depth + oi)", len(feeds))
 	}
-	if feeds[0].Name() != "binance.ws" || feeds[1].Name() != "binance.oi.rest" {
-		t.Fatalf("unexpected feeds: %q, %q", feeds[0].Name(), feeds[1].Name())
+	if feeds[0].Name() != "binance.ws" || feeds[1].Name() != "binance.ws.depth" || feeds[2].Name() != "binance.oi.rest" {
+		t.Fatalf("unexpected feeds: %q, %q, %q", feeds[0].Name(), feeds[1].Name(), feeds[2].Name())
 	}
 }
 

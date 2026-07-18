@@ -16,7 +16,29 @@ export function isDec(value: unknown): value is Dec {
   return typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value);
 }
 
-export const EXCHANGES = ['binance', 'bybit', 'okx', 'coinglass', 'hyperliquid'] as const;
+// The live market-data venues (services/market-data/internal/exchange's
+// registry — one instrument_state.exchange value per adapter). Grew from the
+// original three (F0.4) to all eight at P1.5b/P1.5d but this list was never
+// updated to match, so `FilterBuilder`'s "exchange" filter dropdown silently
+// couldn't select kucoin/aster/mexc/bingx even though real data existed for
+// them (found 2026-07-17, reported as "not all coins are there" — the
+// Screener's own filter builder was the thing under-representing venues, not
+// the underlying data). `Exchange` is a plain string union (every consumer
+// types it as `Exchange | string`, never exhaustively switched on), so
+// widening this list is additive and can't break existing callers.
+// 'coinglass' deliberately isn't here — it's a bought data vendor
+// (CLAUDE.md §7), never an `instrument_state.exchange` value, so it never
+// belonged in a screener-filterable exchange list.
+export const EXCHANGES = [
+  'binance',
+  'bybit',
+  'okx',
+  'hyperliquid',
+  'kucoin',
+  'aster',
+  'mexc',
+  'bingx',
+] as const;
 export type Exchange = (typeof EXCHANGES)[number];
 
 export const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;

@@ -224,3 +224,48 @@ func subscribeArgsFor(symbols []string) []subscribeArg {
 	}
 	return args
 }
+
+// maxSubscribeBytes caps one SUBSCRIBE message's encoded arg payload safely
+// under OKX's documented per-message limit ("the total length of multiple
+// channels cannot exceed 4096 bytes" — verified 2026-07-17 against OKX v5
+// docs; adapter.go's Limits() doc comment has the full story). 3800 leaves
+// headroom for the `{"op":"subscribe","args":[...]}` wrapper.
+//
+// Real bug found 2026-07-17: at 200 symbols this package's own
+// StreamsPerSymbol() (10) puts ~2000 args in one shard; subscribing them all
+// in a single message was ~10x over this limit and OKX rejected the
+// connection outright with `websocket: close 1009 (message too big)`.
+const maxSubscribeBytes = 3800
+
+// subscribeBatches splits args into chunks that each encode under
+// maxSubscribeBytes, so a shard's SUBSCRIBE traffic can never trip OKX's
+// per-message size limit no matter how many symbols it carries. Batch
+// boundaries are computed from each arg's own marshaled size rather than an
+// estimate, so this stays correct if subscribeArg ever grows a field.
+func subscribeBatches(args []subscribeArg) [][]subscribeArg {
+	if len(args) == 0 {
+		return nil
+	}
+	const wrapperOverhead = 40 // `{"op":"subscribe","args":[]}` plus margin
+	var batches [][]subscribeArg
+	cur := make([]subscribeArg, 0, len(args))
+	curBytes := wrapperOverhead
+	for _, a := range args {
+		b, err := json.Marshal(a)
+		if err != nil {
+			continue // can't happen for this struct, but never send something we can't size
+		}
+		size := len(b) + 1 // +1 for the separating comma
+		if len(cur) > 0 && curBytes+size > maxSubscribeBytes {
+			batches = append(batches, cur)
+			cur = make([]subscribeArg, 0, len(args))
+			curBytes = wrapperOverhead
+		}
+		cur = append(cur, a)
+		curBytes += size
+	}
+	if len(cur) > 0 {
+		batches = append(batches, cur)
+	}
+	return batches
+}

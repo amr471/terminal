@@ -143,18 +143,32 @@ func toDecLevels(levels [][2]string) [][2]norm.Dec {
 	return out
 }
 
-// subscribeParams builds the flat stream-name list for the combined-stream
-// SUBSCRIBE method (exchange-websockets skill): "<symbol>@aggTrade",
-// "<symbol>@markPrice", "<symbol>@depth<N>@100ms" (partial-book snapshot), and
-// "<symbol>@kline_<tf>" for every configured timeframe.
-func subscribeParams(symbols []string) []string {
-	depth := fmt.Sprintf("@depth%d@100ms", bookDepth)
-	params := make([]string, 0, len(symbols)*(3+len(timeframes)))
+// marketSubscribeParams builds the flat stream-name list for WSFeed's
+// combined-stream SUBSCRIBE method (exchange-websockets skill):
+// "<symbol>@aggTrade", "<symbol>@markPrice", and "<symbol>@kline_<tf>" for
+// every configured timeframe — everything Binance now routes to /market.
+// Depth moved to depthSubscribeParams (DepthFeed, /public route) at the
+// 2026-07-17 routing split; see package doc in binance.go.
+func marketSubscribeParams(symbols []string) []string {
+	params := make([]string, 0, len(symbols)*(2+len(timeframes)))
 	for _, sym := range symbols {
-		params = append(params, sym+"@aggTrade", sym+"@markPrice", sym+depth)
+		params = append(params, sym+"@aggTrade", sym+"@markPrice")
 		for _, tf := range timeframes {
 			params = append(params, sym+"@kline_"+tf)
 		}
+	}
+	return params
+}
+
+// depthSubscribeParams builds DepthFeed's stream-name list:
+// "<symbol>@depth<N>@100ms" (partial-book snapshot) per symbol — the one
+// stream Binance now routes to /public. Split out of marketSubscribeParams
+// at the 2026-07-17 routing migration; see package doc in binance.go.
+func depthSubscribeParams(symbols []string) []string {
+	depth := fmt.Sprintf("@depth%d@100ms", bookDepth)
+	params := make([]string, 0, len(symbols))
+	for _, sym := range symbols {
+		params = append(params, sym+depth)
 	}
 	return params
 }

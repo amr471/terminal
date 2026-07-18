@@ -42,6 +42,27 @@ func TestDecodeDeals(t *testing.T) {
 	}
 }
 
+// Real bug (2026-07-17): MEXC sends the deal id ("i") as a JSON string for
+// some deals, not just a number — recurring "cannot unmarshal string into
+// Go struct field dealMsg.i of type int64" in production. Every deal in
+// this frame gets dropped (decodeDeals returns an error, not partial
+// results) until the fix.
+func TestDecodeDeals_StringDealID(t *testing.T) {
+	raw := `{"channel":"push.deal","symbol":"BTC_USDT","ts":1755487578276,"data":[
+	  {"p":115309.8,"v":55,"T":1,"O":3,"M":1,"t":1755487578276,"i":"13064218826"}]}`
+	_, sym, data, _, ok, err := classify([]byte(raw))
+	if err != nil || !ok {
+		t.Fatalf("classify ok=%v err=%v", ok, err)
+	}
+	trades, err := decodeDeals(sym, data)
+	if err != nil {
+		t.Fatalf("decodeDeals with a string deal id: %v", err)
+	}
+	if len(trades) != 1 || trades[0].Trade.ID != "13064218826" {
+		t.Fatalf("trades = %+v", trades)
+	}
+}
+
 func TestDecodeKlineSecondsToMs(t *testing.T) {
 	raw := `{"symbol":"BTC_USDT","interval":"Min60","a":233.74,"c":6885,"h":6910.5,"l":6885,"o":6894.5,"q":1611754,"t":1587448800}`
 	c, err := decodeKline("BTC_USDT", json.RawMessage(raw))

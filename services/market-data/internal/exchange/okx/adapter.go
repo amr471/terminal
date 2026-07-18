@@ -34,13 +34,28 @@ func (adapter) ProvidedKinds() []string {
 	return []string{norm.KindTrades, norm.KindCandles, norm.KindBook, norm.KindFunding, norm.KindOI}
 }
 
-// Limits: OKX public caps subscription requests per connection over time
-// (documented as a rolling per-hour limit) and per-message size. VERIFY the
-// current numbers before P1.5c sharding.
+// Limits: verified 2026-07-17 against OKX v5 docs (the VERIFY this comment
+// used to carry was never resolved before P1.5c shipped, and a real run that
+// day hit the consequence — see the bug note below). OKX has no documented
+// cap on the *number* of simultaneous subscriptions a connection may hold —
+// unlike Binance's explicit 1024-streams/conn — so MaxStreamsPerConn stays 0
+// (shardSize treats that as uncapped, giving OKX one shard per venue). The
+// real per-connection constraints are a 4096-byte cap on any single SUBSCRIBE
+// message's arg payload and a 3-requests/second subscribe rate limit (480/hr
+// total); ws.go's subscribeBatches + subscribeAll respect both by chunking
+// and pacing the writes, so shard size doesn't need to shrink to work around
+// them.
+//
+// Real bug found + fixed 2026-07-17: with MaxStreamsPerConn treated as
+// uncapped and 200 symbols x StreamsPerSymbol()=10 in one shard, WSFeed used
+// to send all ~2000 args in a single SUBSCRIBE message — ~10x over the
+// 4096-byte limit — and OKX rejected the connection outright with
+// `websocket: close 1009 (message too big)`. Fixed in ws.go/decode.go, not
+// here: this file's shard-sizing story turned out to be correct all along.
 func (adapter) Limits() exchange.Limits {
 	return exchange.Limits{
 		MaxStreamsPerConn: 0,
-		WeightNote:        "v5 public: rolling per-connection subscription-request limit + per-message size cap; each timeframe is its own channel so candle subs multiply (VERIFY before P1.5c sharding)",
+		WeightNote:        "v5 public: no documented per-connection subscription-count cap; 4096-byte/message + 3 req/s subscribe rate limit instead, handled by chunked+paced SUBSCRIBE writes (verified 2026-07-17)",
 	}
 }
 

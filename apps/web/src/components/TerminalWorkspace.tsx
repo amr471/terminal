@@ -16,15 +16,22 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { Locale, LayoutDefinition, TerminalPanelKind } from '@terminal/types';
 import { ResizableColumns } from '@terminal/ui';
 import { t, type MessageKey } from '@terminal/i18n';
+import { ScreenerPanel } from './ScreenerPanel';
+import { BestPricePanel } from './BestPricePanel';
 
 const PANEL_TITLE_KEY: Record<TerminalPanelKind, MessageKey> = {
   screener: 'nav.screener',
   chart: 'nav.charts',
   news: 'nav.news',
+  bestprice: 'nav.best_price',
 };
 
-const PANEL_BODY_KEY: Record<TerminalPanelKind, MessageKey> = {
-  screener: 'terminal.panel.screener_body',
+// 'screener'/'bestprice' are rendered by real panel components (ScreenerPanel
+// at P1.7, BestPricePanel at P1.7b), not translated placeholder text — the
+// type below deliberately excludes both so this map can't silently grow a
+// dead catalog key back in (same stance P1.4's placeholderFeed.ts follow-up
+// note takes on placeholders: delete, don't extend).
+const PANEL_BODY_KEY: Record<Exclude<TerminalPanelKind, 'screener' | 'bestprice'>, MessageKey> = {
   chart: 'terminal.panel.chart_body',
   news: 'terminal.panel.news_body',
 };
@@ -71,7 +78,11 @@ export function TerminalWorkspace({ locale, tabId, initialDefinition }: Terminal
       initialDefinition={initialDefinition}
       onChange={handleChange}
       panelTitle={(kind) => t(locale, PANEL_TITLE_KEY[kind])}
-      panelBody={(kind) => t(locale, PANEL_BODY_KEY[kind])}
+      panelBody={(kind) => {
+        if (kind === 'screener') return <ScreenerPanel locale={locale} />;
+        if (kind === 'bestprice') return <BestPricePanel locale={locale} />;
+        return t(locale, PANEL_BODY_KEY[kind]);
+      }}
       resizeHandleLabel={t(locale, 'terminal.resize_handle')}
     />
   );

@@ -1,6 +1,8 @@
 package okx
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/terminal/market-data/internal/norm"
@@ -168,6 +170,52 @@ func TestDecodeBook5Snapshot(t *testing.T) {
 	}
 	if len(book.Asks) != 1 || book.Asks[0] != [2]norm.Dec{"64001", "3"} {
 		t.Fatalf("asks = %v", book.Asks)
+	}
+}
+
+func TestSubscribeBatches_EachBatchWithinByteLimit(t *testing.T) {
+	// 200 symbols x 10 streams/symbol ~= 2000 args — the exact shape that
+	// produced `websocket: close 1009 (message too big)` in production
+	// 2026-07-17 when sent as one SUBSCRIBE message.
+	symbols := make([]string, 200)
+	for i := range symbols {
+		symbols[i] = fmt.Sprintf("sym%dusdt", i)
+	}
+	args := subscribeArgsFor(symbols)
+	batches := subscribeBatches(args)
+	if len(batches) < 2 {
+		t.Fatalf("expected multiple batches for %d args, got %d batch(es)", len(args), len(batches))
+	}
+	var total int
+	for i, batch := range batches {
+		if len(batch) == 0 {
+			t.Fatalf("batch %d is empty", i)
+		}
+		encoded, err := json.Marshal(map[string]any{"op": "subscribe", "args": batch})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(encoded) > 4096 {
+			t.Fatalf("batch %d encodes to %d bytes, exceeds OKX's 4096-byte limit", i, len(encoded))
+		}
+		total += len(batch)
+	}
+	if total != len(args) {
+		t.Fatalf("batches carry %d args total, want %d (none dropped/duplicated)", total, len(args))
+	}
+}
+
+func TestSubscribeBatches_SmallInputIsOneBatch(t *testing.T) {
+	args := subscribeArgsFor([]string{"btcusdt"})
+	batches := subscribeBatches(args)
+	if len(batches) != 1 || len(batches[0]) != len(args) {
+		t.Fatalf("batches = %+v, want a single batch of %d args", batches, len(args))
+	}
+}
+
+func TestSubscribeBatches_EmptyInput(t *testing.T) {
+	if batches := subscribeBatches(nil); batches != nil {
+		t.Fatalf("batches = %+v, want nil for empty input", batches)
 	}
 }
 

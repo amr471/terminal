@@ -12,6 +12,7 @@ export const COMMAND_FUNCTIONS = {
   CAL: 'nav.calendar',
   JRNL: 'nav.journal',
   AL: 'nav.alerts',
+  BEST: 'nav.best_price',
 } as const;
 
 export type CommandFunction = keyof typeof COMMAND_FUNCTIONS;

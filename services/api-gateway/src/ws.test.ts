@@ -165,6 +165,136 @@ test('WS rejects an unknown/malformed channel name', { skip: !reachable }, async
   await app.close();
 });
 
+test(
+  'WS screener.subscribe returns an initial snapshot; unsubscribe is acked',
+  { skip: !reachable },
+  async () => {
+    const app = await buildApp();
+    const cookie = await signupAndGetCookie(app);
+    const port = await listenOnRandomPort(app);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { cookie } });
+    await new Promise<void>((resolve, reject) => {
+      ws.on('open', () => resolve());
+      ws.on('error', reject);
+    });
+
+    // Inline definition (works even with an empty instrument_state — the
+    // snapshot just carries zero rows). subId is echoed back on every frame.
+    ws.send(
+      JSON.stringify({
+        action: 'screener.subscribe',
+        subId: 'sub-a',
+        definition: {
+          version: 1,
+          root: {
+            kind: 'group',
+            logic: 'and',
+            children: [{ kind: 'numeric', field: 'volume_24h', op: 'gt', value: '0' }],
+          },
+        },
+      }),
+    );
+    const snap = await waitForFrame(
+      ws,
+      (f) => f.type === 'screener.snapshot' && (f as { subId?: string }).subId === 'sub-a',
+    );
+    assert.ok(Array.isArray((snap as { rows?: unknown }).rows));
+
+    ws.send(JSON.stringify({ action: 'screener.unsubscribe', subId: 'sub-a' }));
+    await waitForFrame(
+      ws,
+      (f) => f.type === 'screener.unsubscribed' && (f as { subId?: string }).subId === 'sub-a',
+    );
+
+    ws.close();
+    await app.close();
+  },
+);
+
+test(
+  'WS screener.subscribe with an invalid definition returns GW-2005',
+  { skip: !reachable },
+  async () => {
+    const app = await buildApp();
+    const cookie = await signupAndGetCookie(app);
+    const port = await listenOnRandomPort(app);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { cookie } });
+    await new Promise<void>((resolve, reject) => {
+      ws.on('open', () => resolve());
+      ws.on('error', reject);
+    });
+
+    ws.send(
+      JSON.stringify({
+        action: 'screener.subscribe',
+        subId: 'bad',
+        definition: { version: 99, root: {} },
+      }),
+    );
+    const err = await waitForFrame(ws, (f) => f.type === 'error');
+    assert.equal(err.code, 'GW-2005');
+
+    ws.close();
+    await app.close();
+  },
+);
+
+test(
+  'WS bestprice.subscribe returns an initial snapshot; unsubscribe is acked',
+  { skip: !reachable },
+  async () => {
+    const app = await buildApp();
+    const cookie = await signupAndGetCookie(app);
+    const port = await listenOnRandomPort(app);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { cookie } });
+    await new Promise<void>((resolve, reject) => {
+      ws.on('open', () => resolve());
+      ws.on('error', reject);
+    });
+
+    // No definition/filter to pass (unlike screener) — the snapshot just
+    // carries whatever bestPriceHub currently has (zero rows against an
+    // empty instrument_state is fine).
+    ws.send(JSON.stringify({ action: 'bestprice.subscribe', subId: 'sub-a' }));
+    const snap = await waitForFrame(
+      ws,
+      (f) => f.type === 'bestprice.snapshot' && (f as { subId?: string }).subId === 'sub-a',
+    );
+    assert.ok(Array.isArray((snap as { rows?: unknown }).rows));
+
+    ws.send(JSON.stringify({ action: 'bestprice.unsubscribe', subId: 'sub-a' }));
+    await waitForFrame(
+      ws,
+      (f) => f.type === 'bestprice.unsubscribed' && (f as { subId?: string }).subId === 'sub-a',
+    );
+
+    ws.close();
+    await app.close();
+  },
+);
+
+test('WS bestprice.subscribe with a malformed message returns GW-2008', { skip: !reachable }, async () => {
+  const app = await buildApp();
+  const cookie = await signupAndGetCookie(app);
+  const port = await listenOnRandomPort(app);
+
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { cookie } });
+  await new Promise<void>((resolve, reject) => {
+    ws.on('open', () => resolve());
+    ws.on('error', reject);
+  });
+
+  ws.send(JSON.stringify({ action: 'bestprice.subscribe' })); // missing subId
+  const err = await waitForFrame(ws, (f) => f.type === 'error');
+  assert.equal(err.code, 'GW-2008');
+
+  ws.close();
+  await app.close();
+});
+
 after(async () => {
   if (reachable) {
     await pool.query(`DELETE FROM users WHERE email LIKE 'ws-test-%@example.invalid'`);

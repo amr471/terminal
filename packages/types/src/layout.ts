@@ -11,7 +11,7 @@
  * server-side.
  */
 
-export const TERMINAL_PANEL_KINDS = ['screener', 'chart', 'news'] as const;
+export const TERMINAL_PANEL_KINDS = ['screener', 'chart', 'news', 'bestprice'] as const;
 export type TerminalPanelKind = (typeof TERMINAL_PANEL_KINDS)[number];
 
 export interface LayoutPanelSlot {
@@ -97,7 +97,15 @@ export function isValidLayoutDefinition(def: unknown): def is LayoutDefinition {
   return validateLayoutDefinition(def).length === 0;
 }
 
-/** The out-of-the-box view (CLAUDE.md §5: "Default = screener + chart + news"). */
+/** The out-of-the-box view (CLAUDE.md §5: "Default = screener + chart + news"
+ * plus P1.7b's consolidated best-price board in its own column — added
+ * 2026-07-17 when 'bestprice' joined TERMINAL_PANEL_KINDS. There is no
+ * "add panel to an existing saved layout" UI yet (P1.3/P1.3c only ever
+ * built resize/reorder/move-between-existing-columns), so a new panel kind
+ * only becomes reachable for real users via this default — same reasoning
+ * as P1.3's original "default = screener + chart + news" seed. Existing
+ * saved layouts (the `layouts` table) are untouched; only fresh tabs pick
+ * this up. */
 export function defaultLayoutDefinition(): LayoutDefinition {
   return {
     version: 1,
@@ -110,6 +118,7 @@ export function defaultLayoutDefinition(): LayoutDefinition {
           { kind: 'news', size: 1 },
         ],
       },
+      { size: 1, panels: [{ kind: 'bestprice', size: 1 }] },
     ],
   };
 }

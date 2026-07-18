@@ -48,7 +48,11 @@ func (f *WSFeed) Connect(ctx context.Context) error {
 		return err
 	}
 	f.conn = c
-	f.msgs = make(chan conn.RawMsg, 256)
+	// 1024, not the 256 other venues default to: this feed multiplexes
+	// book+trades across every symbol on one connection, and real-load logs
+	// (2026-07-17) showed persistent "dropped message; consumer too slow"
+	// here — 256 was undersized for the burst size at a real symbol count.
+	f.msgs = make(chan conn.RawMsg, 1024)
 	f.candles = newCandleTracker()
 	// No client ping loop: BingX is a reactive "Ping"->"Pong" heartbeat handled
 	// inside readLoop, so there's no second goroutine to cancel. Close() drops

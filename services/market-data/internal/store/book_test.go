@@ -47,6 +47,57 @@ func TestLocalBook_EmptySideReturnsNil(t *testing.T) {
 	}
 }
 
+// Real-world bug (2026-07-17): cache:book:bybit:btcusdt showed a crossed
+// book (best bid > best ask) — a raw redis-cli check found an orphaned ask
+// level sitting below the real, tightly-clustered ask prices. Root cause:
+// applySide keyed price levels by the raw wire string, so a delta deleting
+// a level with a differently-formatted trailing-zero price than the one
+// that inserted it (e.g. snapshot sends "62849.90", delta deletes
+// "62849.9") missed the map entry entirely, orphaning it forever instead of
+// just until the next message.
+func TestLocalBook_DeleteMatchesDifferentTrailingZeroFormat(t *testing.T) {
+	b := newLocalBook()
+	b.apply(norm.Book{
+		Snapshot: true,
+		Asks:     [][2]norm.Dec{{"62849.90", "1"}, {"62854.90", "1"}},
+	})
+	if got := b.bestAsk(); got == nil || !got.Equal(dec("62849.90")) {
+		t.Fatalf("bestAsk = %v, want 62849.90", got)
+	}
+
+	b.apply(norm.Book{Asks: [][2]norm.Dec{{"62849.9", "0"}}})
+
+	if got := b.bestAsk(); got == nil || !got.Equal(dec("62854.90")) {
+		t.Fatalf("bestAsk after delete = %v, want 62854.90 (62849.9x level should be gone)", got)
+	}
+}
+
+func TestCanonicalPriceKey(t *testing.T) {
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"62849.90", "62849.9", true},
+		{"62849.9", "62849.9", true},
+		{"100", "100", true},
+		{"0100", "100", true},
+		{"-0.500", "-0.5", true},
+		{"0.0", "0", true},
+		{"-0", "0", true},
+		{"+5.20", "5.2", true},
+		{"abc", "", false},
+	}
+	for _, c := range cases {
+		got, ok := canonicalPriceKey(c.in)
+		if ok != c.ok {
+			t.Fatalf("canonicalPriceKey(%q) ok = %v, want %v", c.in, ok, c.ok)
+		}
+		if ok && got != c.want {
+			t.Fatalf("canonicalPriceKey(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestLocalBook_SnapshotOrdersBestFirstAndCapsDepth(t *testing.T) {
 	b := newLocalBook()
 	levels := make([][2]norm.Dec, 0, bookLevels+5)

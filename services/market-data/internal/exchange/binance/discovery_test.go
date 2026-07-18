@@ -37,7 +37,10 @@ func TestFetchInstrumentsFiltersLiveUSDTPerps(t *testing.T) {
 }
 
 func TestStreamsPerSymbol(t *testing.T) {
-	if n := Adapter().StreamsPerSymbol(); n != 9 {
-		t.Fatalf("StreamsPerSymbol = %d, want 9", n)
+	// aggTrade + markPrice + 6 klines = 8. depth moved to its own /public
+	// connection (DepthFeed) at the 2026-07-17 routing split and no longer
+	// counts here — see discovery.go's doc comment.
+	if n := Adapter().StreamsPerSymbol(); n != 8 {
+		t.Fatalf("StreamsPerSymbol = %d, want 8", n)
 	}
 }

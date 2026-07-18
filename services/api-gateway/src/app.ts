@@ -11,7 +11,10 @@ import { config } from './config.js';
 import { registerAuthRoutes } from './authRoutes.js';
 import { registerMarketRoutes } from './marketRoutes.js';
 import { registerLayoutRoutes } from './layoutRoutes.js';
+import { registerScreenerRoutes } from './screenerRoutes.js';
 import { registerWsRoute } from './ws.js';
+import { screenerHub } from './screenerHub.js';
+import { bestPriceHub } from './bestPriceHub.js';
 import { pool } from './db.js';
 import { redis } from './redis.js';
 import { isSubscriberReady } from './pubsub.js';
@@ -48,7 +51,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerAuthRoutes(app);
   registerMarketRoutes(app);
   registerLayoutRoutes(app);
+  registerScreenerRoutes(app);
   registerWsRoute(app);
+
+  // Start polling instrument_state into the screener working set. Idempotent
+  // and unref'd, so it never holds a test process open; a failed poll degrades
+  // (keeps the previous set) rather than crashing the gateway.
+  screenerHub.start();
+  // Same idempotent/unref'd polling for the consolidated best-price board
+  // (P1.7b) — instrument_state + cache:book:* rather than instrument_state
+  // alone (bestPriceHub.ts).
+  bestPriceHub.start();
 
   app.setErrorHandler((err, _request, reply) => {
     app.log.error({ err }, 'unhandled error');

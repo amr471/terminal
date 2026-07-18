@@ -33,6 +33,13 @@ var _ conn.Feed = (*WSFeed)(nil)
 // literal text "ping" every <30s. 20s keeps a comfortable margin.
 const pingInterval = 20 * time.Second
 
+// subscribePaceInterval spaces batched SUBSCRIBE writes to stay under OKX's
+// documented 3-requests/second subscribe rate limit (verified 2026-07-17,
+// see adapter.go's Limits() doc comment) with a comfortable margin. A full
+// 200-symbol shard is ~25 batches at maxSubscribeBytes, so this adds a few
+// seconds to initial connect — a one-time cost, not a steady-state one.
+const subscribePaceInterval = 400 * time.Millisecond
+
 func NewWSFeed(symbols []string, log *slog.Logger) *WSFeed {
 	return &WSFeed{symbols: symbols, wsURL: wsBase, log: log.With("feed", "okx.ws")}
 }
@@ -45,17 +52,43 @@ func (f *WSFeed) Connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	args := subscribeArgsFor(f.symbols)
-	if err := c.WriteJSON(map[string]any{"op": "subscribe", "args": args}); err != nil {
-		_ = c.Close()
-		return fmt.Errorf("okx.ws: subscribe: %w", err)
-	}
+	// Start reading and answering pings *before* subscribing: a full
+	// 200-symbol shard's subscribe now takes several seconds across many
+	// batches (subscribeAll below), and OKX starts acking/pushing data for
+	// each batch as soon as it's sent. Nothing draining the connection
+	// during that window would let acks/data pile up unread for the whole
+	// subscribe duration instead of the usual sub-second window.
 	f.conn = c
 	f.msgs = make(chan conn.RawMsg, 256)
 	loopCtx, cancel := context.WithCancel(ctx)
 	f.cancel = cancel
 	go f.readLoop(cancel)
 	go f.pingLoop(loopCtx)
+	if err := f.subscribeAll(ctx, c, subscribeArgsFor(f.symbols)); err != nil {
+		_ = c.Close()
+		return err
+	}
+	return nil
+}
+
+// subscribeAll sends args across as many SUBSCRIBE messages as
+// subscribeBatches decides are needed to stay under OKX's per-message size
+// limit, paced under its per-second rate limit. ctx-aware so a shutdown
+// mid-subscribe doesn't block on the pacing sleep.
+func (f *WSFeed) subscribeAll(ctx context.Context, c *wsutil.Conn, args []subscribeArg) error {
+	batches := subscribeBatches(args)
+	for i, batch := range batches {
+		if err := c.WriteJSON(map[string]any{"op": "subscribe", "args": batch}); err != nil {
+			return fmt.Errorf("okx.ws: subscribe batch %d/%d: %w", i+1, len(batches), err)
+		}
+		if i < len(batches)-1 {
+			select {
+			case <-time.After(subscribePaceInterval):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+	}
 	return nil
 }
 
@@ -158,11 +191,7 @@ func (f *WSFeed) Resync(ctx context.Context) error {
 	if f.conn == nil {
 		return nil
 	}
-	args := subscribeArgsFor(f.symbols)
-	if err := f.conn.WriteJSON(map[string]any{"op": "subscribe", "args": args}); err != nil {
-		return fmt.Errorf("okx.ws: resync resubscribe: %w", err)
-	}
-	return nil
+	return f.subscribeAll(ctx, f.conn, subscribeArgsFor(f.symbols))
 }
 
 func (f *WSFeed) Close() error {

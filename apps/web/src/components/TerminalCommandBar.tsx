@@ -34,6 +34,7 @@ const FN_PANEL_KIND: Partial<Record<CommandFunction, TerminalPanelKind>> = {
   CHART: 'chart',
   NEWS: 'news',
   SCREEN: 'screener',
+  BEST: 'bestprice',
 };
 
 const HIGHLIGHT_MS = 1500;
