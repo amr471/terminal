@@ -731,7 +731,38 @@ of one venue's partial window, not real 24h volume.
 | --- | --- | --- |
 | binance | `!ticker@arr` all-market stream, 1 stream total, venue-wide singleton (`TickerFeed`, ticker.go) | **done** |
 | bybit | the `tickers.{sym}` topic we *already* subscribed — `volume24h`/`turnover24h`/`price24hPcnt` were being decoded and discarded; `price24hPcnt` is already a fraction, so no /100 | **done** |
-| okx, kucoin, mexc, bingx, hyperliquid, aster | — | **not yet wired** |
+| okx | REST `/api/v5/market/tickers?instType=SWAP`, whole SWAP market in one request, venue-wide singleton (`ticker.go`) | **done** |
+| aster | REST `/fapi/v1/ticker/24hr` (Binance-clone surface, package doc), array covering every instrument | **done** |
+| kucoin, mexc, bingx, hyperliquid | — | **not yet wired** |
+
+**`exchange.RESTTickerFeed` (shared).** Only some venues publish an all-market
+ticker *stream* (Binance's `!ticker@arr`; Bybit carries the fields on a topic we
+already subscribe). The rest offer 24h stats only per-symbol over websocket,
+which would cost one stream per symbol against a budget that already forced
+sharding **and** still only cover the capped symbol set — while the whole point
+is universe-wide coverage, since `volume_24h > 0` hides any instrument without a
+volume. So there's now one reusable REST poller (`internal/exchange/tickerpoll.go`)
+that each venue plugs a `TickerParser` into: one request per interval (15s
+default) returns every instrument, costs no stream budget, and reuses the same
+conn.Feed lifecycle as the existing OI pollers. Adding a venue is one
+`ticker.go` with a parse func plus a `VenueFeeds` line.
+
+Per-venue gotchas already encoded: OKX returns application errors with **HTTP
+200** and a non-`"0"` body code (treating that as an empty result would silently
+clear the venue's universe), publishes `ts` as a *string*, and gives `open24h`
+rather than a percent — so change is computed as an exact decimal
+`(last-open)/open`, guarded against a zero open. Aster publishes
+`priceChangePercent` as a percent and needs the ÷100 to reach the fraction
+convention.
+
+**Not yet verified for the remaining four.** KuCoin, MEXC, BingX and
+HyperLiquid each need their own endpoint + field names confirmed against live
+docs before wiring — HyperLiquid in particular is a **POST** `info` call
+(`metaAndAssetCtxs`), which `RESTTickerFeed` doesn't support yet (GET only), so
+it needs a small extension rather than just a parser. Deliberately left rather
+than guessed: CLAUDE.md's "every third-party feed is assumed unreliable" applies
+most when the wire format is unconfirmed, and a wrong field name here fails
+silently as an empty column rather than loudly.
 
 The remaining six each need their own wire-format verification (several have no
 all-market ws ticker and would want a REST 24h-tickers poller instead, like the

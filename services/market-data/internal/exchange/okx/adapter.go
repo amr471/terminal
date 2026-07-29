@@ -13,7 +13,17 @@ import (
 // instid.go/decode.go unchanged.
 type adapter struct{}
 
-var _ exchange.Adapter = adapter{}
+var (
+	_ exchange.Adapter     = adapter{}
+	_ exchange.VenueFeeder = adapter{}
+)
+
+// VenueFeeds returns the venue-wide 24h ticker poller (P1.5e). OKX has no
+// all-market ticker ws channel, so this REST-polls the whole SWAP market in
+// one request — see ticker.go and exchange.RESTTickerFeed.
+func (adapter) VenueFeeds(log *slog.Logger) []conn.Feed {
+	return []conn.Feed{NewTickerFeed(log)}
+}
 
 // Adapter returns the OKX venue adapter for cmd/market-data/main.go.
 func Adapter() exchange.Adapter { return adapter{} }
@@ -30,8 +40,12 @@ func (adapter) WireSymbol(symbol string) (string, bool) {
 }
 
 func (adapter) ProvidedKinds() []string {
-	// OKX exposes funding-rate and open-interest as ws channels (no poller).
-	return []string{norm.KindTrades, norm.KindCandles, norm.KindBook, norm.KindFunding, norm.KindOI}
+	// OKX exposes funding-rate and open-interest as ws channels (no poller);
+	// 24h ticker stats come from the REST poller (ticker.go).
+	return []string{
+		norm.KindTrades, norm.KindCandles, norm.KindBook,
+		norm.KindFunding, norm.KindOI, norm.KindTicker,
+	}
 }
 
 // Limits: verified 2026-07-17 against OKX v5 docs that OKX itself has no

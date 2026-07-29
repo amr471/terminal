@@ -13,7 +13,17 @@ import (
 // feed and a REST OI poller (Aster has no OI websocket channel, like Binance).
 type adapter struct{}
 
-var _ exchange.Adapter = adapter{}
+var (
+	_ exchange.Adapter     = adapter{}
+	_ exchange.VenueFeeder = adapter{}
+)
+
+// VenueFeeds returns the venue-wide 24h ticker poller (P1.5e) — one REST call
+// covering every instrument, so volume_24h/change_24h populate immediately
+// instead of waiting on our own candle history. See ticker.go.
+func (adapter) VenueFeeds(log *slog.Logger) []conn.Feed {
+	return []conn.Feed{NewTickerFeed(log)}
+}
 
 // Adapter returns the Aster venue adapter for cmd/market-data/main.go.
 func Adapter() exchange.Adapter { return adapter{} }
@@ -30,7 +40,10 @@ func (adapter) WireSymbol(symbol string) (string, bool) {
 }
 
 func (adapter) ProvidedKinds() []string {
-	return []string{norm.KindTrades, norm.KindCandles, norm.KindBook, norm.KindFunding, norm.KindOI}
+	return []string{
+		norm.KindTrades, norm.KindCandles, norm.KindBook,
+		norm.KindFunding, norm.KindOI, norm.KindTicker,
+	}
 }
 
 // Limits mirror Binance-family caps: a single connection can carry up to 200
