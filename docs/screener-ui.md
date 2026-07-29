@@ -273,10 +273,214 @@ too complex to also narrow by exchange" message. Realistic filter trees are
 nowhere near either budget, so this wasn't treated as blocking — flagged
 here rather than silently ignored.
 
+## Real bug found + fixed: the symbol column could render at ~0px width (2026-07-18)
+
+John reported that in the default 3-column layout (`defaultLayoutDefinition()`
+— Screener in the left column, Chart+News in the middle, Best Price in the
+right), the Screener panel's coin identity was invisible: "the names of the
+coins are not visible, even when I move the gesture to the right and left."
+The screenshot showed a header row starting `Exchange | PRICE | 24H% |
+VOLUME 24H` with no `SYMBOL` header at all, even though `symbol` is first in
+`DEFAULT_VISIBLE_COLUMNS`.
+
+Root cause: `ScreenerTable.tsx`'s `COLUMN_WIDTH_PX` deliberately left
+`symbol` unset so it would "flex" into whatever width the fixed columns
+didn't claim (2026-07-17's column-jump fix, above). That reasoning only
+holds when there's space left over. Per the CSS 2.1 fixed-table-layout
+algorithm, a table's used width is `max(specified width, sum of the
+*explicitly widthed* columns)` — an unset column isn't part of that sum, so
+once the fixed columns alone (exchange 90 + price 110 + three 76px change
+columns + volume_24h 110, etc.) already add up to more than a narrowed
+panel's real width, `symbol` gets 0px of the remainder and genuinely
+disappears — not scrolled off, not clipped, zero rendered width. The default
+layout's three equal-width columns make a narrow panel the common case, not
+an edge case. `BestPriceTable.tsx` had the identical pattern (`symbol` also
+left unset there) and would hit the same bug under the same conditions.
+
+Fixed in both tables: `symbol` now has a real fixed width (120px, sized for
+mono 12px text up to ~14 chars plus cell padding — covers real symbols like
+`1000pepeusdt`). On top of that, `terminal.css` gained a sticky-left rule for
+whichever column is first (`.t-screener__table--fixed .t-screener__th:first-
+child` / `.t-screener__td:first-child`), so the identity column stays
+visible while the metric columns scroll underneath it — turning horizontal
+scroll from "the coin name disappears no matter what" into the standard
+frozen-first-column pattern these dense tables need. Verified: `tsc --noEmit`
+clean in `@terminal/ui` and `apps/web`, `@terminal/ui`'s 58/58 `node --test`
+suite green, `eslint` clean.
+
+**Also raised in the same message, not yet acted on:** "why the right one
+[Best Price] at all, if there is a left one [Screener]?" — a real product
+question about whether the two panels are redundant, not a bug. See
+`docs/best-price.md`'s matching section for the answer given.
+
+## Row click opens an internal detail tab; exchange badge links out to the real venue (2026-07-18)
+
+Two distinct click affordances landed on the same row this round, from two
+separate asks — worth keeping straight since they target different
+elements:
+
+- **Clicking anywhere else on a row** (`onSymbolClick` on `ScreenerTable`)
+  opens `/[locale]/terminal/symbol/[symbol]` in a new browser tab — our own
+  cross-venue detail view. See `docs/best-price.md`'s "Product decision:
+  dropped from the default layout..." section for the full story (this
+  replaced the persistent Best Price side panel).
+- **Clicking the `exchange` cell specifically** now opens that venue's own
+  real trading page for the row's symbol in a new tab —
+  `exchangeTradeUrl(venue, symbol)` (`packages/types/src/exchangeLinks.ts`,
+  documented in `docs/best-price.md`'s matching section). The exchange
+  cell's `onClick` calls `e.stopPropagation()` so it doesn't also trigger
+  the row's `onSymbolClick`; falls back to plain text for a venue string
+  `exchangeTradeUrl` doesn't recognize.
+
+Verified: `@terminal/types` 41/41, `@terminal/ui` 58/58, `tsc --noEmit`/
+`eslint` clean everywhere touched.
+
+## Alphabetical (symbol) sort (2026-07-19)
+
+John asked for an alphabetical option alongside the volume-desc default.
+`ScreenerTable`'s doc comment used to say only real `ScreenerField`s (the
+numeric filter/sort fields) were sortable — `symbol`/`exchange` were
+identity columns the query engine's `ScreenDefinition.sort` didn't support
+ordering by, since a client-side-only sort on an unsupported field would
+silently diverge from the server's `order` array on the next live refresh.
+Rather than special-case a client-only sort (which would have exactly that
+bug), `symbol` became a real, server-side-recognized sort field:
+
+- `packages/types/src/screener.ts` — new `SCREENER_SORT_FIELDS =
+  [...SCREENER_FIELDS, 'symbol']` / `ScreenerSortField` type;
+  `ScreenDefinition.sort.field` widened to it. `runScreen`'s comparator
+  branches on `field === 'symbol'` to do a plain codepoint string compare
+  (`a.symbol < b.symbol`, not `localeCompare` — symbols are always ASCII
+  tickers, and a fixed compare is deterministic across locales/ICU
+  versions, same "exact, no surprise" stance `compareDec` takes for the
+  numeric fields) instead of `compareDec`. 2 new tests (asc + desc).
+- `services/api-gateway/src/screenerValidation.ts` — `sort.field`'s
+  whitelist check now reads `SCREENER_SORT_FIELDS` instead of
+  `SCREENER_FIELDS`, so a saved screen or live subscription can actually
+  request it.
+- `ScreenerTable.tsx` (`@terminal/ui`) — `SORTABLE_FIELDS` now built from
+  `SCREENER_SORT_FIELDS`; clicking the `Symbol` column header sorts like
+  any other sortable column (same click-to-toggle-asc/desc UX). `exchange`
+  is still not sortable — it's categorical, no ordering defined for it,
+  unchanged.
+
+Verified: `@terminal/types` 42/42 (+1 new test, 2 assertions),
+`@terminal/ui` 58/58, `tsc --noEmit` clean for `@terminal/types`/
+`@terminal/ui`/`@terminal/web`/`@terminal/api-gateway`, `eslint` clean on
+every touched package. Not yet browser-confirmed.
+
+## Binance-preferred consolidation + coins/stocks quick filter (2026-07-19)
+
+Request, verbatim: "let's do this: all coins are only displayed with
+binance data. if there is no binance, then it is from another exchange
+where it exists. also put a filter on stocks and coins." Driven by the
+same session's earlier finding (see `docs/market-data-feeds.md`'s
+2026-07-19 section) that the Screener's raw one-row-per-(exchange,symbol)
+model, once the sharding/backpressure bugs were fixed and every venue was
+actually flowing data, reads as noisy/duplicated to a user scanning for a
+single price per coin — kucoin/bybit/okx all listing the same symbol looks
+like clutter, not signal, for that use case.
+
+**This is a display-layer transform only** — it does not touch the
+underlying per-(exchange,symbol) data model (`docs/screener.md`'s
+discovery use case, unchanged), does not change what a saved screen's
+`ScreenDefinition` stores, and does not touch the gateway/WS wire protocol
+at all. Both new functions live in `@terminal/types`
+(`packages/types/src/screener.ts`), pure and fully unit-tested (48/48
+green after `pnpm build && pnpm test`):
+
+- `consolidateByVenuePreference(rows, priority = EXCHANGES)` — groups the
+  subscription's raw rows by `symbol`. Binance (`priority[0]`) wins outright
+  whenever it lists the symbol. **Revised 2026-07-19, same day** — the
+  original version fell back to a fixed `EXCHANGES` priority order
+  (`['binance','bybit','okx','hyperliquid','kucoin','aster','mexc','bingx']`)
+  when Binance was absent; John reported this reads as "almost all coins are
+  from kucoin" in practice and clarified the actual ask: "if there is no
+  such coin on binance, then on another exchange, where the trading volume
+  of this coin is higher (this is already new)." So the non-Binance
+  fallback is now volume-based — whichever venue has the higher
+  `volume_24h` for that specific symbol wins, not the next entry in a fixed
+  array. `priority` order is now only a deterministic tie-break, used when
+  volumes are equal or both `null` (e.g. a freshly-listed symbol with no
+  derived stats yet) — this keeps the pick stable instead of flapping
+  between venues tick to tick. A venue absent from `priority` still isn't
+  excluded from the volume comparison, only from the tie-break. Preserves
+  the input array's relative order (matters for the existing sort, which
+  runs server-side before this transform ever sees the rows).
+  **The cross-venue OI/funding fill was REMOVED 2026-07-26** — every value in a
+  row now comes from that row's own exchange, full stop. Two reasons: it
+  contradicted the venue-priority picker ("if mexc, then everything is on mexc"
+  means the OI column must be MEXC's number), and it made the table
+  self-inconsistent — the exchange quick-pick filters *server-side*, so
+  selecting a venue removed the donor rows and open interest that had been
+  visible under "All exchanges" vanished when the user picked that same
+  exchange. The honest fix for a blank cell is to make the venue report the
+  field (docs/market-data-feeds.md §P1.5e/§P1.5f), not to substitute another
+  venue's number. The original rationale is kept below for context:
+
+  ~~**Cross-venue OI/funding fill added 2026-07-23**~~ — only 5 of the 8 venues
+  emit open interest (Binance/Bybit/OKX/HyperLiquid/Aster) and 6 emit funding;
+  KuCoin/MEXC/BingX emit neither. Since the volume winner is often one of those
+  three, a consolidated row would show a blank OI/funding cell even when another
+  venue has the value for the same symbol (this was John's "open interest is not
+  displayed" report). So when the winning row lacks `open_interest` or
+  `funding_rate`, it now keeps its own price/volume/venue but borrows *only*
+  those two fields from the best (same Binance-first / highest-volume rule)
+  venue that has them. Deliberately narrow: price, %change, volume, and spread
+  stay purely the winner's, so a row's core numbers never silently mix venues —
+  only the two derivatives-only fields (broadly venue-consistent, fine for a
+  screener glance, not for execution) are borrowed. If no venue has the field,
+  it stays `null`.
+- `isStockToken(symbol)` — a **client-side heuristic**, not a real
+  `asset_class` field read: `ScreenerRow.asset_class` is hardcoded
+  `"crypto"` for every row server-side today
+  (`services/market-data/internal/store/state.go`) — real stock/crypto
+  classification is unbuilt, owned by the still-unstarted roadmap item
+  **P1B.3 "Stocks surface"** (`TASKS.md`). Matches Bybit's real TradFi
+  tokenized-stock-perpetual naming convention, confirmed via WebSearch
+  against Bybit's own announcements: `{TICKER}STOCKUSDT` (e.g.
+  `AMDSTOCKUSDT`), i.e. `symbol.toLowerCase().endsWith('stockusdt')`. This
+  only catches Bybit-listed tokenized stocks today — it is explicitly a
+  stopgap, not the P1B.3 fix.
+
+**Re-verified after the volume-tiebreak revision:** `@terminal/types` 51/51
+(3 new cases: non-binance volume tiebreak wins over fixed priority order,
+Binance still wins outright even when out-volumed, a known volume beats an
+unknown/`null` one), `@terminal/api-gateway` and `@terminal/web`
+`tsc --noEmit` clean, `@terminal/web` `node --test` 52/52. Not yet
+browser-confirmed.
+
+`ScreenerPanel.tsx` wires both together in one `displayRows` memo (filter
+by `assetClassFilter` first, then `consolidateByVenuePreference` — cheaper
+since asset-class filtering shrinks the set before dedup, and the two
+operations are independent so order doesn't change the result either way).
+`displayRows`, not the raw `rows` from `useScreenerSubscription`, now feeds
+`ScreenerTable`, `handleExport`'s CSV builder, and the export button's
+empty-state check. The existing per-exchange `exchangeFilter` quick-pick
+(`docs/screener-ui.md`'s earlier P1.7 section) composes cleanly with this:
+it's still applied server-side via the filter tree before rows ever reach
+the client, so when it's set to a single exchange every row already shares
+that exchange and `consolidateByVenuePreference` is a no-op per symbol —
+no conflict between the two filters.
+
+New UI: a second `<select>` next to the existing exchange-filter dropdown,
+`''` (all) / `'coin'` / `'stock'`, new i18n keys
+`screener.asset_class_filter.{label,all,coin,stock}` in both `en.ts` and
+`ru.ts`.
+
+Verified: `@terminal/types` 48/48, `@terminal/ui` 58/58, `@terminal/i18n`
+16/16, `tsc --noEmit` clean for `@terminal/types`/`@terminal/ui`/
+`@terminal/i18n`/`@terminal/api-gateway`/`@terminal/web`, `eslint src`
+clean on `@terminal/web`. Not yet browser-confirmed — please open the
+Screener, confirm duplicate symbols across venues collapse to a single
+Binance-sourced row (falling back to another venue for symbols Binance
+doesn't list), and confirm the new coins/stocks dropdown filters as
+expected.
+
 ## Tests run in this sandbox
 
 `@terminal/types`, `@terminal/ui`, `@terminal/i18n`, and `apps/web`'s own
-`tsc`+`node --test` all pass (26 / 58 / 16 / 48 tests respectively,
+`tsc`+`node --test` all pass (48 / 58 / 16 / 48 tests respectively,
 0 fail), plus `eslint`/`prettier --check` clean across every touched file.
 **Not exercised here** (no Docker/Postgres/Redis in this sandbox, same
 standing limitation as every other P1.x task): the gateway's `/screener/query`
@@ -284,6 +488,7 @@ and `/screens` REST surface, the live WS `screener.subscribe` round trip
 against a real `instrument_state` working set, and — as called out above —
 whether the dev HTTPS proxy forwards the WS upgrade at all. Please run
 `dev:up` / `dev:migrate` and open the terminal to confirm the screener
-panel loads a preset, edits+applies a filter, sorts, exports a CSV, and
-goes `live` (not stuck on the connecting badge) before treating this as
-confirmed.
+panel loads a preset, edits+applies a filter, sorts, exports a CSV, goes
+`live` (not stuck on the connecting badge), and — new as of 2026-07-19 —
+that Binance-preferred consolidation and the coins/stocks filter both
+behave as expected, before treating this as confirmed.

@@ -5,7 +5,7 @@
  * definition is fully validated before it is stored or executed — especially
  * LLM-produced ones (GW-2005).
  */
-import { validateFilterNode, SCREENER_FIELDS, type ScreenDefinition } from '@terminal/types';
+import { validateFilterNode, SCREENER_SORT_FIELDS, type ScreenDefinition } from '@terminal/types';
 
 const MAX_SCREEN_LIMIT = 1000;
 
@@ -26,7 +26,10 @@ export function validateScreenDefinition(value: unknown): DefinitionCheck {
 
   if (d.sort !== undefined) {
     const s = d.sort as Record<string, unknown>;
-    if (!(SCREENER_FIELDS as readonly string[]).includes(s.field as string))
+    // 'symbol' (alphabetical) added 2026-07-19 alongside the numeric
+    // ScreenerFields — SCREENER_SORT_FIELDS is the single source of truth
+    // shared with runScreen's comparator (@terminal/types).
+    if (!(SCREENER_SORT_FIELDS as readonly string[]).includes(s.field as string))
       return { ok: false, detail: `sort.field must be a screener field` };
     if (s.dir !== 'asc' && s.dir !== 'desc') return { ok: false, detail: 'sort.dir must be asc|desc' };
   }

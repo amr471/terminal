@@ -371,3 +371,29 @@ after a few seconds) instead of the previous silent no-op.
   the layout autosave can't be exercised end to end on John's machine until
   mkcert is installed outside the turbo/next process tree and
   `--experimental-https` is restored.
+
+## Session strip: 24/7 bands + a separate weekend marker (2026-07-26)
+
+`isSessionOpen` no longer considers the weekday. The strip originally followed
+FX dealing-desk convention (Mon–Fri), so every label went dim Sat/Sun — John
+reported "the session is not displayed" four times before we settled it, most
+recently seeing a dim NEW YORK at Sunday 12:57 EDT. His call: this is a
+crypto-first terminal, crypto trades through the weekend, and its liquidity
+still follows these regional hour bands, so a strip that's dead two days a week
+is dead weight exactly when he's looking at it.
+
+So there are now two independent signals:
+
+- **The bands highlight 24/7**, purely on hour-of-day in each hub's timezone.
+- **`isMarketWeekend()`** drives a separate badge — "Weekend — equities & FX
+  closed" — so a lit NEW YORK band on a Sunday isn't misread as an open
+  equities session.
+
+`isMarketWeekend` uses the industry-standard FX weekend window expressed in New
+York time: **Friday 17:00 NY → Sunday 17:00 NY** (Sydney's Monday open). A
+naive "is it Sat/Sun" check gets this wrong in both directions because the hubs
+straddle the dateline — at Sunday 12:57 NY it is already Monday in Sydney, yet
+the market is still shut. (An earlier attempt that required *every* hub to be
+on a weekend failed exactly this case; the test suite pins both boundaries.)
+The `status.session.all_closed` string now means only a genuine between-bands
+gap.

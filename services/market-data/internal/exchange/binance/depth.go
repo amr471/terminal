@@ -44,8 +44,13 @@ func (f *DepthFeed) Connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	params := depthSubscribeParams(f.symbols)
+	// Diagnostic-only logging, same reasoning as WSFeed.Connect (ws.go) —
+	// not yet root-caused why 1008 recurred 2026-07-19 despite the routing
+	// fix; this line gives forensic detail for the next live run.
+	f.log.Info("subscribing", "symbols", len(f.symbols), "params", len(params))
 	if err := c.WriteJSON(map[string]any{
-		"method": "SUBSCRIBE", "params": depthSubscribeParams(f.symbols), "id": 1,
+		"method": "SUBSCRIBE", "params": params, "id": 1,
 	}); err != nil {
 		_ = c.Close()
 		return fmt.Errorf("binance.ws.depth: subscribe: %w", err)
@@ -86,15 +91,16 @@ func (f *DepthFeed) handle(raw []byte) {
 
 func (f *DepthFeed) emit(symbol, kind, tf string, typ norm.MessageType, ts int64, data any) {
 	ch := norm.Channel{Exchange: exchangeName, Symbol: symbol, Kind: kind, TF: tf}
-	env := norm.Envelope{
+	// Seq only assigned on actual enqueue — see WSFeed.emit's comment in
+	// ws.go (same fix, same reasoning, this package's other feed type).
+	if len(f.msgs) >= cap(f.msgs) {
+		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
+		return
+	}
+	f.msgs <- conn.RawMsg{Channel: ch, Env: norm.Envelope{
 		V: 1, Type: typ, Src: exchangeName, Sym: symbol,
 		TS: ts, RTS: time.Now().UnixMilli(), Seq: f.seq.Add(1), Data: data,
-	}
-	select {
-	case f.msgs <- conn.RawMsg{Channel: ch, Env: env}:
-	default:
-		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
-	}
+	}}
 }
 
 func (f *DepthFeed) Messages() <-chan conn.RawMsg { return f.msgs }

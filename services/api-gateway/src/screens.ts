@@ -69,6 +69,151 @@ export const PRESETS: readonly Screen[] = [
       limit: 50,
     },
   },
+  // Expanded 2026-07-26 (John: "we need more filters ... one-click presets").
+  // Every preset carries `volume_24h > 0` so it can't surface dead or
+  // not-yet-populated instruments — nulls never match, which is exactly the
+  // behavior we want here (see docs/screener.md).
+  {
+    id: 'preset:top-gainers',
+    name: 'Top gainers',
+    isPreset: true,
+    sortKey: 'change_24h',
+    definition: {
+      version: 1,
+      root: {
+        kind: 'group',
+        logic: 'and',
+        children: [
+          { kind: 'numeric', field: 'volume_24h', op: 'gt', value: '1000000' },
+          { kind: 'numeric', field: 'change_24h', op: 'gt', value: '0' },
+        ],
+      },
+      sort: { field: 'change_24h', dir: 'desc' },
+      limit: 50,
+    },
+  },
+  {
+    id: 'preset:top-losers',
+    name: 'Top losers',
+    isPreset: true,
+    sortKey: 'change_24h',
+    definition: {
+      version: 1,
+      root: {
+        kind: 'group',
+        logic: 'and',
+        children: [
+          { kind: 'numeric', field: 'volume_24h', op: 'gt', value: '1000000' },
+          { kind: 'numeric', field: 'change_24h', op: 'lt', value: '0' },
+        ],
+      },
+      sort: { field: 'change_24h', dir: 'asc' },
+      limit: 50,
+    },
+  },
+  {
+    id: 'preset:most-active',
+    name: 'Most active',
+    isPreset: true,
+    sortKey: 'volume_24h',
+    definition: {
+      version: 1,
+      root: {
+        kind: 'group',
+        logic: 'and',
+        children: [{ kind: 'numeric', field: 'volume_24h', op: 'gt', value: '0' }],
+      },
+      sort: { field: 'volume_24h', dir: 'desc' },
+      limit: 100,
+    },
+  },
+  {
+    id: 'preset:high-funding',
+    name: 'High funding',
+    isPreset: true,
+    sortKey: 'funding_rate',
+    definition: {
+      version: 1,
+      root: {
+        kind: 'group',
+        logic: 'and',
+        children: [
+          { kind: 'numeric', field: 'volume_24h', op: 'gt', value: '0' },
+          // 0.0005 = 0.05% per interval — an elevated long-side crowding
+          // signal, not a hard threshold; users can tune after applying.
+          { kind: 'numeric', field: 'funding_rate', op: 'gt', value: '0.0005' },
+        ],
+      },
+      sort: { field: 'funding_rate', dir: 'desc' },
+      limit: 50,
+    },
+  },
+  {
+    id: 'preset:high-volatility',
+    name: 'High volatility',
+    isPreset: true,
+    sortKey: 'volatility_24h',
+    definition: {
+      version: 1,
+      root: {
+        kind: 'group',
+        logic: 'and',
+        children: [
+          { kind: 'numeric', field: 'volume_24h', op: 'gt', value: '1000000' },
+          { kind: 'numeric', field: 'volatility_24h', op: 'gt', value: '0' },
+        ],
+      },
+      sort: { field: 'volatility_24h', dir: 'desc' },
+      limit: 50,
+    },
+  },
+  {
+    id: 'preset:wide-spread',
+    name: 'Wide spread',
+    isPreset: true,
+    sortKey: 'spread',
+    definition: {
+      version: 1,
+      root: {
+        kind: 'group',
+        logic: 'and',
+        children: [
+          { kind: 'numeric', field: 'volume_24h', op: 'gt', value: '0' },
+          { kind: 'numeric', field: 'spread', op: 'gt', value: '0' },
+        ],
+      },
+      sort: { field: 'spread', dir: 'desc' },
+      limit: 50,
+    },
+  },
+  {
+    id: 'preset:big-movers',
+    name: 'Big movers (±10%)',
+    isPreset: true,
+    sortKey: 'change_24h',
+    definition: {
+      version: 1,
+      root: {
+        kind: 'group',
+        logic: 'and',
+        children: [
+          { kind: 'numeric', field: 'volume_24h', op: 'gt', value: '1000000' },
+          // Exercises the OR branch and the `not between` idea via two arms:
+          // anything outside ±10% on the day.
+          {
+            kind: 'group',
+            logic: 'or',
+            children: [
+              { kind: 'numeric', field: 'change_24h', op: 'gt', value: '0.10' },
+              { kind: 'numeric', field: 'change_24h', op: 'lt', value: '-0.10' },
+            ],
+          },
+        ],
+      },
+      sort: { field: 'volume_24h', dir: 'desc' },
+      limit: 100,
+    },
+  },
 ];
 
 const PRESET_BY_ID = new Map(PRESETS.map((p) => [p.id, p]));

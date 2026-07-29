@@ -269,26 +269,22 @@ only ever converted to a string ID afterward anyway, so there was no real
 reason to force it through `int64` in the first place. Regression test:
 `TestDecodeDeals_StringDealID`.
 
-## Backpressure ("dropped message; consumer too slow") — expected, not a bug, but worth knowing the lever
+## Backpressure ("dropped message; consumer too slow") — expected in small doses, was a real bug at scale for bybit/OKX (fixed 2026-07-19, see below)
 
-Every venue's `WSFeed.emit` pushes onto a buffered channel (`f.msgs`, size
-256) with a non-blocking `select`/`default` — if the single consumer
-goroutine (`conn.Manager.consume`, which calls the sink synchronously per
-message) can't drain it fast enough, new messages are dropped rather than
-blocking the read loop, logged as `"dropped message; consumer too slow"`.
-This is ADR-004's documented lossy-by-design stance for `md.*`, not new
-behavior — but two things make it worth flagging: (1) it recurs
-persistently for `hyperliquid` (funding/oi) and `bingx` (book/trades) under
-real load, meaning the 256-message buffer is undersized relative to how
-many symbols those two venues' single shared connection multiplexes; (2)
-unlike trades (where losing one update is harmless — the next one
-supersedes it), a dropped `oi`/`funding` message leaves that field stale
-until the *next* update fires, which is a plausible contributor to sparse-
-looking Open Interest data. Not fixed this round — the real fix is either a
-bigger buffer (cheap, just delays the problem) or moving the sink call off
-the single per-feed consumer goroutine (a bigger architectural change,
-worth a real discussion before building). Flagged here rather than
-silently building either without agreeing on the approach first.
+Every venue's `WSFeed.emit` pushes onto a buffered channel (`f.msgs`) with a
+non-blocking check/send — if the single consumer goroutine
+(`conn.Manager.consume`, which calls the sink synchronously per message)
+can't drain it fast enough, new messages are dropped rather than blocking
+the read loop, logged as `"dropped message; consumer too slow"`. This is
+ADR-004's documented lossy-by-design stance for `md.*`, not new behavior —
+occasional drops under a burst are fine. What was NOT fine, and got fixed
+2026-07-19, is when an entire venue's multiplexed connection structurally
+can't keep up under sustained real load — see "Real bugs found + fixed:
+seq-before-drop ordering, bybit/OKX mega-shard backpressure" below for the
+full story (this note used to end with "not fixed this round... worth a
+real discussion before building" — that discussion happened via research
+into each venue's real documented limits, and the fix landed as
+per-venue connection sharding, not a Manager-level architecture change).
 
 ## "context canceled" bursts on shutdown/restart — expected, same root cause class as the WaitGroup fix above
 
@@ -495,6 +491,342 @@ real exchanges (this fix was built and unit-tested in the sandbox, which has
 no outbound access to Binance/OKX's actual websocket endpoints) — John still
 needs to run `go run ./cmd/market-data` again and confirm the 1008/1009
 closes are gone before this counts as confirmed fixed in production.
+
+## Real bugs found + fixed: OKX subscribe-ack misclassification, buffer bump, Aster kline decode (2026-07-18)
+
+John ran `go run ./cmd/market-data` live to verify the fixes above and
+pasted a screenshot (Screener/Best Price tables now showing symbol columns
+correctly, unrelated frontend fix) alongside a fresh log dump. The
+OKX/Binance connection fixes held — no more 1008/1009 closes — but the log
+exposed a new, real regression the OKX batching fix itself introduced,
+plus one unrelated Aster decode bug.
+
+**OKX — a burst of hundreds of `"decode trades/funding-rate/open-interest/
+books5 failed","err":"...unexpected end of JSON input"` plus a matching
+flood of `"dropped message; consumer too slow"`, both within a ~300ms
+window right after connecting.** Root cause: `okx/decode.go`'s `classify()`
+filtered out subscribe acks/errors by checking only `env.Arg == nil` — but
+OKX subscribe acks *do* carry `arg` (they echo back the channel/instId just
+subscribed: `{"event":"subscribe","arg":{...},"connId":"..."}`). That gap
+existed before today but was harmless when one shard sent a single SUBSCRIBE
+message and got back a handful of acks. The 2026-07-18 batching fix (above)
+that fixed the 1009 "message too big" made it a real problem: OKX acks each
+subscribed arg individually, so a 200-symbol shard (~2000 args) now
+produces on the order of 2000 ack frames in a burst right after connecting.
+Every one of those was being misclassified as a real data push and handed
+to `decodeTrades`/`decodeFunding`/`decodeOI`/`decodeBook5`, all of which
+failed on the ack's missing `data` field — and processing ~2000 failed
+decodes synchronously in the single read/decode goroutine is what was
+actually starving real message consumption and triggering the backpressure
+drops, not primarily real traffic volume. Fixed by checking `Event != ""`
+first (real data pushes never carry `event`; acks/errors always do, with or
+without `arg`) — a one-line change, `env.Event != "" || env.Arg == nil`.
+`TestClassify_SubscribeAckIgnored` used to only document this shape
+(`_ = ok`, no assertion); now asserts `ok == false`.
+
+**OKX — also bumped the per-feed buffer 256→1024**, same fix and same
+reasoning hyperliquid/bingx got 2026-07-17: a full 200-symbol shard on one
+connection is real load (trades+funding+OI+books5+6 candle streams), and
+the ack-flood fix alone doesn't guarantee the buffer never fills under
+genuine peak traffic.
+
+**Aster — `"decode kline failed","err":"aster: decode kline: json: cannot
+unmarshal number into Go struct field .k.l of type string"`.** Same bug
+class as the 2026-07-17 MEXC deal-id fix: Aster's kline low-price field
+arrived as a JSON *number* instead of the string this repo's `klineMsg`
+struct expected, and one bad-shaped field failed the whole message's
+decode. Fixed by adding a local `flexStr` type (same pattern as mexc's) and
+applying it to all four OHLC fields (`o`/`h`/`l`/`c`), not just the one
+caught in the log — they're the same data shape from the same vendor, so
+if one field is inconsistent about string-vs-number the others are equally
+suspect.
+
+Verified: `go build ./...`, `go vet ./...`, `gofmt -l .` clean; `go test
+./internal/... -race -count=1` — every package green **except one known
+pre-existing flake**: `internal/supervisor`'s `TestReconcileStartsStopsRestarts`
+timed out waiting for a fake feed close in 2 of 4 `-race` runs (always passes
+without `-race`, and without `-race -count=1` it's cached-green). Confirmed
+via `git diff` that nothing in `internal/supervisor` changed today or in the
+2026-07-17 round — this is a pre-existing timing-sensitive test, most likely
+too tight a margin between its `waitFor` 2s deadline and `-race`'s slower
+goroutine scheduling, not a real regression. Not fixed here (out of scope
+for today's OKX/Aster bugs); worth a dedicated look if it keeps showing up.
+
+Not yet verified: whether these three fixes actually eliminate the flood
+on a real live run — John needs to run `go run ./cmd/market-data` again and
+confirm no more OKX decode-failed/dropped-message bursts and no more Aster
+kline-decode warnings.
+
+## Real bugs found + fixed: seq-before-drop ordering, bybit/OKX mega-shard backpressure (2026-07-19)
+
+John reported the Screener (sorted by volume desc) was overwhelmingly
+kucoin rows with almost no binance/bybit/okx, and asked whether a VPN was
+interfering. A fresh live run's logs told a different, fully-explainable
+story — not network/VPN, our own consumer code:
+
+**Root cause 1 — seq assigned before the drop check, in every venue's
+`emit()`.** All 11 emit sites (binance ws.go/depth.go/oi.go, bybit, okx,
+kucoin, mexc, bingx, aster ws.go/oi.go, hyperliquid) called `f.seq.Add(1)`
+unconditionally while building the envelope, *before* the non-blocking
+`select`/`default` that might drop it. A dropped message still consumed a
+sequence number, so `Manager.checkSeq` (internal/conn/manager.go) saw a gap
+among what actually arrived and misdiagnosed an ordinary backpressure drop
+as a real "sequence anomaly" — logged and handled identically to genuine
+lost-in-transit data, triggering `Resync()`. For bybit/OKX (see below),
+`Resync()` resubscribes *every symbol on the shard*, adding SUBSCRIBE
+traffic on top of an already-overloaded connection right when it's least
+able to absorb it — a feedback loop that made bursts worse, not better.
+Fixed everywhere: `Seq` is now only assigned to messages that actually
+enqueue (checked via `len(f.msgs) >= cap(f.msgs)` before sending — safe
+without a lock since `emit()` only ever runs on each feed's single
+producer goroutine: the WS `readLoop`, or the REST `OIFeed`'s single poll
+loop).
+
+**Root cause 2 — bybit and OKX both had `MaxStreamsPerConn: 0` (uncapped),
+collapsing their entire 200-symbol universe onto ONE connection.** Compare
+KuCoin, which has zero drops in every live run so far: KuCoin's real
+~100-topics/connection exchange limit forces `shardSize≈11`,
+`shardCount≈19` — 19 independent connections, each with its own
+`Manager.consume` goroutine synchronously publishing to Redis, so the
+publish workload is naturally spread across 19 goroutines instead of
+piling onto one. Bybit (`StreamsPerSymbol()=9`) and OKX
+(`StreamsPerSymbol()=10`) don't have a comparable exchange-imposed
+subscription-count limit, so `MaxStreamsPerConn` had been left at `0`
+("uncapped") — correct as far as what each exchange itself allows, but it
+meant ~1800-2000 multiplexed streams draining through a *single* consumer
+goroutine that blocks on a Redis round-trip per message. Under real market
+throughput that goroutine falls behind, `f.msgs` fills, and `emit()` starts
+dropping — hundreds of drops/sec in today's log, which is also why
+binance/bybit/OKX symbols were so sparse in the Screener: `instrument_state`
+is populated purely from live WS ticks (no REST backfill,
+`store/aggregator.go`), so a symbol whose trade/kline messages keep getting
+dropped never gets a complete row.
+
+Fixed by giving both venues a real, *self-imposed* `MaxStreamsPerConn`
+(this is us choosing to shard for our own consumer throughput, not
+something either exchange requires — verified via each exchange's real
+documented connection limits before picking a number, 2026-07-19):
+- **Bybit: `MaxStreamsPerConn = 100`** → `shardSize=11`, `shardCount≈19`
+  (same order as KuCoin, deliberately — targets a similar per-connection
+  message rate). Bybit's real limits are generous enough that 19
+  connections is a non-issue: up to 1000 market-data connections per IP,
+  no more than 500 new connections per 5-minute window.
+- **OKX: `MaxStreamsPerConn = 500`** → `shardSize=50`, `shardCount≈4`.
+  Kept smaller than bybit's fix on purpose: OKX's real, documented
+  constraint is 3 new-connection-establishments/second per IP (a startup
+  burst of 19 shards would risk tripping that; 4 comfortably won't). Any
+  transiently-rejected dial still self-heals via `Manager`'s existing
+  jittered backoff — same resilience stance every feed already has. The
+  existing 4096-byte/message + 3-req/s *subscribe*-rate handling
+  (`subscribeBatches`/`subscribeAll`, per-connection, verified 2026-07-17)
+  is unaffected — smaller shards mean smaller SUBSCRIBE payloads too.
+- Bybit's buffer also bumped 256→1024, matching OKX's existing 2026-07-18
+  precedent, as defense-in-depth alongside the sharding fix (not a
+  replacement for it).
+
+**Also added, diagnostic-only, not a fix:** the Binance 1008 close
+(`websocket: close 1008 (policy violation): Invalid request`) recurred on
+today's run despite the 2026-07-17 `/market`/`/public` routing split, which
+is confirmed byte-for-byte present and correct against Binance's real docs
+(verified again 2026-07-19 — base URLs, routing rules, the "unrouted
+connections only get Public data" behavior all match). Root cause not yet
+found: two live leads researched but not confirmed — Binance's separate
+"5 incoming messages/sec including subscribe commands" cap (our SUBSCRIBE
+is one message, so this seems unlikely but isn't ruled out) and whether the
+new routed `/market/ws`/`/public/ws` base still supports the classic
+"dial bare, then SUBSCRIBE via message" pattern the same way the legacy
+endpoint did (docs suggest yes, but not confirmed against this exact
+combination). Can't reproduce from this sandbox — no outbound access to
+Binance's real endpoints. Added `f.log.Info("subscribing", "symbols",
+"params", ...)` right before the SUBSCRIBE write in both `WSFeed.Connect`
+and `DepthFeed.Connect` (ws.go/depth.go) so the next live run gives
+forensic detail correlatable with whatever close error follows, instead of
+just the generic close reason. **Still open — flagged to John, not
+guess-fixed.**
+
+**Binance — 1008 root-caused + fixed (2026-07-22).** The diagnostic logging
+above paid off. On a clean ~2-minute live run all eight venues reconciled and
+`binance.ws.depth` connected fine at `params:96`, while `binance.ws` looped
+forever on `1008 (policy violation): Invalid request` at `params:832`
+(~100 symbols × 8 streams). Re-verified against Binance's live USDⓈ-M docs:
+routing is correct (`aggTrade`/`markPrice`/`kline` all belong to `/market`,
+`depth` to `/public` — our split matches the published Endpoint & Stream
+Mapping), stream names are all well-formed, and 832 is comfortably under the
+documented **1024 streams/connection** cap. The one variable that differs
+between the failing feed and the working one is the **size of the single
+SUBSCRIBE frame**: the 1024 limit is *cumulative across frames*, not a
+per-frame limit, and Binance's gateway rejects one oversized SUBSCRIBE with a
+1008 close even when the total is legal. The DepthFeed's single 96-param frame
+on the same server family is the control that proves ≤96 params/frame is
+known-good. (The earlier "5/sec incoming" lead was a red herring — we send one
+message, and the discriminator is size, not rate.) Fixed by sending WSFeed's
+subscription as **several small paced SUBSCRIBE frames** instead of one:
+`chunkParams` (decode.go) splits the stream list into batches of
+`maxParamsPerSubscribe` (80, under the proven-good 96), and
+`WSFeed.subscribeChunked` (ws.go) writes each as its own SUBSCRIBE spaced by
+`subscribeSpacing` (120 ms → ~8 frames/sec, under Binance's 10-msg/sec
+incoming limit); Connect and Resync share the path. The diagnostic
+`f.log.Info("subscribing", …)` now also logs `batches`. Unit-tested
+(`TestChunkParams`): batches never exceed the cap, lose nothing, preserve
+order, and the cap is asserted ≤96. **Note the correction to the 2026-07-19
+entry above:** the recurring 1008 was never the routing split failing — that
+split was correct all along — nor a shard-count problem (832 < 1024). It was
+the oversized single subscribe frame, which no amount of correct routing or
+legal total-stream budgeting addresses. `go build`/`go vet`/`go test ./...`
+clean in the sandbox (Go 1.26). **Live-confirmed 2026-07-23: John reported
+`binance.ws` now connects with no 1008 after the chunk fix.** The chunked/paced
+SUBSCRIBE is the confirmed fix for the recurring Binance 1008.
+
+Verified: `go build`/`go vet`/`gofmt -l` clean, `go test ./... -race
+-count=1` green across every package (the one pre-existing flaky test,
+`internal/supervisor`'s `TestReconcileStartsStopsRestarts`, is unchanged —
+still ~50% flaky under `-race`, unrelated to any of today's changes per
+`supervisor_test.go`'s own fake-venue test harness, which doesn't read
+bybit/OKX's real adapter limits). Not yet re-verified on a real live run.
+
+## P1.5e — venue 24h ticker (the "few coins / no Binance" root cause)
+
+**Symptom (John, 2026-07-25):** the Screener showed ~35 rows, almost all
+KuCoin, no Binance at all, with absurd `VOLUME 24H` figures (43, 106, 222,520)
+and a blank `24H %` on most rows.
+
+**Root cause — not a feed bug.** `instrument_state.volume_24h` and `change_24h`
+were derived *exclusively* from **our own recorded candles**
+(`Aggregator.recomputeOne` → `Postgres.Volume24h`, which sums 1h candles over
+the last 24h), and `OnCandle` persists a bucket **only once it's `Final`**. So a
+freshly started process has no 1h candle for a full hour, leaving both columns
+`NULL` for every symbol. The screener's default `volume_24h > 0` filter can
+never match `NULL` (nulls-never-match is deliberate — see docs/screener.md), so
+nearly every symbol was filtered out *server-side*. Binance rows were dropped
+before `consolidateByVenuePreference` ever ran, which is why the Binance
+preference appeared not to work. The handful of surviving rows showed minutes
+of one venue's partial window, not real 24h volume.
+
+**Fix:** take 24h stats from each venue's own ticker, which is correct on the
+**first message** instead of after an hour of uptime.
+
+- `norm.Ticker` / `norm.KindTicker` / `TypeTicker` (mirrored in
+  `@terminal/types`' `TickerPayload` + `MdChannel`, TS being the source of
+  truth). `Change24h` is a **fraction** (-0.052), matching
+  `instrument_state.change_*`; venues publishing a percent divide by 100 in
+  their decoder (`pctToFraction`).
+- `Aggregator.OnTicker` sets `price`/`volume_24h`/`change_24h`, preferring
+  **quote volume** (USDT) over base volume so a volume sort stays comparable
+  across symbols at wildly different price levels.
+- `InstrumentState.venueVolume24h` / `venueChange24h` are **in-memory-only**
+  flags (never columns, never persisted) telling `recomputeOne` not to
+  overwrite an authoritative venue figure with a candle-derived one. Without
+  the guard a recompute would blank `volume_24h` again and re-hide the symbol.
+  Venues with no ticker still use the candle path unchanged.
+- `exchange.VenueFeeder` is a new **optional** Adapter extension for feeds that
+  are venue-wide singletons rather than per-shard. The all-market ticker
+  already covers every symbol, so routing it through `Feeds()` would open one
+  duplicate connection per shard; the supervisor starts `VenueFeeds()` exactly
+  once per venue, under the venue context, unaffected by shard churn. Adapters
+  that don't implement it are untouched (plain type assertion).
+
+**Per-venue status:**
+
+| Venue | Source | Status |
+| --- | --- | --- |
+| binance | `!ticker@arr` all-market stream, 1 stream total, venue-wide singleton (`TickerFeed`, ticker.go) | **done** |
+| bybit | the `tickers.{sym}` topic we *already* subscribed — `volume24h`/`turnover24h`/`price24hPcnt` were being decoded and discarded; `price24hPcnt` is already a fraction, so no /100 | **done** |
+| okx, kucoin, mexc, bingx, hyperliquid, aster | — | **not yet wired** |
+
+The remaining six each need their own wire-format verification (several have no
+all-market ws ticker and would want a REST 24h-tickers poller instead, like the
+existing OI pollers). Deliberately left for a follow-up rather than guessed at —
+CLAUDE.md's "every third-party feed is assumed unreliable" cuts both ways.
+Until then those venues keep the candle-derived path, so their `volume_24h`
+still fills in slowly. Binance carries the bulk of the universe and wins
+`consolidateByVenuePreference` outright, so the user-visible effect is large.
+
+Verified in sandbox (Go 1.26): `go build`/`go vet`/`gofmt -l` clean, `go test
+./...` green across every package; `@terminal/types` + `@terminal/i18n` 72/72.
+Binance decoder tests cover the array frame, the subscribe-ack (object) frame,
+malformed entries, and percent→fraction.
+
+**Live run 2026-07-26 — partly working, one real bug fixed, one open.** Volumes,
+24h % and OI all came through correctly for Bybit (BTC at $1.38B 24h volume,
+real percentages, populated OI), confirming the ticker path works end to end.
+Two findings:
+
+- **Binance kline decode bug, FIXED.** The log filled with `decode kline: json:
+  cannot unmarshal number into Go struct field .k.l of type string` — Binance
+  quotes OHLCV for most symbols but pushes a **bare JSON number** for some, and
+  a single unquoted field failed the whole message, discarding every candle for
+  that symbol. Fixed with the same `flexStr` string-or-number type
+  `mexc/decode.go` already needed (kept as exact digits, never via float64).
+  Applied to `tickerMsg` too as insurance: one `!ticker@arr` frame carries the
+  entire venue, so one unquoted field there would cost the whole universe
+  rather than one coin.
+- **Binance rows still absent from the screener — OPEN.** The screener showed
+  only Bybit. The generic feed logs can't distinguish "ticker feed never
+  connected" from "connected but every message dropped downstream", so
+  `TickerFeed` now logs its first frame (and every 300th) with the symbol count
+  plus queue depth/capacity, and rate-limits a distinct
+  `dropped ticker; consumer too slow` warning. Next live run should say which.
+  Leading hypotheses, unconfirmed: (a) backpressure — one frame fans out to
+  thousands of messages and the 8192 buffer plus per-symbol Postgres upserts may
+  not keep up; (b) the feed isn't connecting at all. Not guess-fixed.
+
+**Binance JSON case-folding collision — FIXED 2026-07-26 (second live run).**
+Binance rows finally appeared (the ticker feed was working all along), which
+exposed a worse bug: nearly every price rendered as `1,785,263,923,377`. That's
+a **millisecond timestamp**, not a price. Cause: `encoding/json` matches an
+exact struct tag first and then falls back to **case-insensitive** matching, and
+Binance's 24hrTicker carries both `c` (last price) and `C` (statistics close
+time). With no field tagged `C`, the `C` key folded onto `Last` (tagged `c`) and
+— arriving later in the object — overwrote the price. Identical collision pairs
+exist for `l`/`L` (low vs last-trade-id), `q`/`Q`, `o`/`O`, `p`/`P`.
+
+The same class of bug was silently corrupting candles: inside the kline `k`
+object, `V` (taker-buy base volume) and `Q` (taker-buy quote volume) arrive
+*after* `v`/`q` (the totals), so they won the fold — **every stored candle's
+volume was really just the taker-buy share**, which also understated the
+candle-derived `Volume24h` that the six non-ticker venues still depend on.
+
+Fix: declare **every** key Binance sends on both `tickerMsg` and `klineMsg`,
+including ones we never read, so each uppercase key gets an exact match and can
+never be folded onto its lowercase twin. This is precisely the trap
+`classify()`'s doc comment at the top of decode.go already warned about — worth
+re-reading before adding any new Binance struct. Regression tests use Binance's
+real full field set *and* real key order (the order matters — the collision only
+bites because the uppercase key comes second); both were confirmed to fail
+against the pre-fix struct, reproducing `last = "1785263923377"` exactly.
+
+## P1.5f — the symbol cap is ranked by volume, not alphabetically
+
+With prices fixed, the next live screenshot showed funding and open interest
+populated for `1000pepe/ake/bank/bnb/btc/bz/cl/coti/dexe/doge/eth` and blank for
+everything after — `ewy`, `hype`, `intc`, `koru`, `mu`, `nvda`, `on`, `qqq`,
+`sol`, `sox`, `xag`, `xau`, `xrp`, `zec`. That cutoff is exactly mid-alphabet,
+and it's the tell: `applyCap` sorted the venue's instrument list
+**alphabetically** and kept the first `MAX_SYMBOLS_PER_VENUE` (200).
+
+Only capped symbols get the per-symbol feeds — funding rides `markPrice` on
+`WSFeed`, open interest comes from the REST poller — while the all-market ticker
+(P1.5e) covers *every* symbol. So price/volume/24h% were universe-wide but
+funding/OI were reserved for whichever 200 coins happened to sort first:
+`akeusdt` in, `xrpusdt` out.
+
+Fixed by ranking before capping:
+
+- `exchange.VolumeRanker` — a new **optional** adapter extension.
+  `RankByVolume(ctx, symbols)` returns the list reordered most-important-first.
+  Implemented for Binance over `GET /fapi/v1/ticker/24hr` (one request, weight
+  40, every symbol's 24h quote volume), parsed as `decimal` — never float64.
+- `applyCap` no longer sorts. It now keeps the first N **in the order given**,
+  and the caller owns the ordering; it used to sort internally, which would have
+  silently discarded any ranking passed to it. `sortedByName` is the
+  deterministic default for venues without a ranker.
+- Ranking failure is non-fatal — the supervisor logs and falls back to
+  alphabetical, which is still deterministic and so doesn't churn the universe.
+  Unranked symbols are appended, never dropped: ranking is a preference, not a
+  filter.
+
+Venues without a `VolumeRanker` keep the alphabetical cap; only Binance
+implements it so far, same staged rollout as the ticker feed.
 
 ## Grows at
 

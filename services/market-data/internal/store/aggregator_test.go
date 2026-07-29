@@ -279,6 +279,90 @@ func TestAggregator_OnOI_UpdatesStateAndPersists(t *testing.T) {
 	}
 }
 
+// P1.5e: a venue's own 24h ticker is the authoritative source for
+// volume_24h/change_24h. Prefers quote volume (comparable across symbols at
+// different price levels — the point of a volume sort) over base volume.
+func TestAggregator_OnTicker_SetsVolumeAndChangeFromVenue(t *testing.T) {
+	agg, _, _, _ := newTestAggregator(t)
+	ctx := context.Background()
+	env := norm.Envelope{V: 1, Type: norm.TypeTicker, Src: "binance", Sym: "btcusdt", TS: 1000}
+	agg.OnTicker(ctx, "binance", "btcusdt", env, norm.Ticker{
+		Last: "64000.5", Volume24h: "1234.5", QuoteVolume24h: "78900000", Change24h: "-0.052",
+	})
+
+	agg.mu.Lock()
+	s := agg.states[key("binance", "btcusdt")]
+	agg.mu.Unlock()
+	if s == nil {
+		t.Fatal("no state")
+	}
+	if s.Volume24h == nil || !s.Volume24h.Equal(dec("78900000")) {
+		t.Errorf("volume_24h = %v, want the quote volume 78900000", s.Volume24h)
+	}
+	if s.Change24h == nil || !s.Change24h.Equal(dec("-0.052")) {
+		t.Errorf("change_24h = %v, want -0.052", s.Change24h)
+	}
+	if s.Price == nil || !s.Price.Equal(dec("64000.5")) {
+		t.Errorf("price = %v, want 64000.5", s.Price)
+	}
+}
+
+// The regression that motivated all of this: a candle-derived recompute must
+// NOT overwrite the venue's authoritative 24h figures. Ours are only as
+// complete as our uptime — on a fresh start there are no 1h candles at all, so
+// letting recompute win would blank volume_24h and (because the screener's
+// `volume_24h > 0` filter can never match NULL) re-hide the symbol entirely.
+func TestAggregator_Recompute_DoesNotClobberVenueTicker(t *testing.T) {
+	agg, fw, _, _ := newTestAggregator(t)
+	ctx := context.Background()
+	env := norm.Envelope{V: 1, Type: norm.TypeTicker, Src: "binance", Sym: "btcusdt", TS: 1000}
+	agg.OnTicker(ctx, "binance", "btcusdt", env, norm.Ticker{
+		Last: "100", QuoteVolume24h: "78900000", Change24h: "-0.052",
+	})
+
+	// Candle history says something different (and much smaller — a partial
+	// window), exactly the situation on a freshly started process.
+	fw.mu.Lock()
+	small := dec("42")
+	fw.volume["binance|btcusdt"] = &small
+	fw.mu.Unlock()
+
+	agg.recomputeOne(ctx, "binance", "btcusdt", time.UnixMilli(1000))
+
+	agg.mu.Lock()
+	s := agg.states[key("binance", "btcusdt")]
+	agg.mu.Unlock()
+	if s.Volume24h == nil || !s.Volume24h.Equal(dec("78900000")) {
+		t.Errorf("volume_24h = %v, want the venue figure 78900000 to survive recompute", s.Volume24h)
+	}
+	if s.Change24h == nil || !s.Change24h.Equal(dec("-0.052")) {
+		t.Errorf("change_24h = %v, want the venue figure to survive recompute", s.Change24h)
+	}
+}
+
+// ...but with no venue ticker, the candle-derived value is still used (this is
+// the pre-P1.5e behavior, which must keep working for venues without a ticker).
+func TestAggregator_Recompute_StillUsesCandlesWithoutVenueTicker(t *testing.T) {
+	agg, fw, _, _ := newTestAggregator(t)
+	ctx := context.Background()
+	env := norm.Envelope{V: 1, Type: norm.TypeTrade, Src: "kucoin", Sym: "dymusdt", TS: 1000}
+	agg.OnTrade(ctx, "kucoin", "dymusdt", env, norm.Trade{Price: "1", Qty: "1", Side: "buy"})
+
+	fw.mu.Lock()
+	v := dec("4242")
+	fw.volume["kucoin|dymusdt"] = &v
+	fw.mu.Unlock()
+
+	agg.recomputeOne(ctx, "kucoin", "dymusdt", time.UnixMilli(1000))
+
+	agg.mu.Lock()
+	s := agg.states[key("kucoin", "dymusdt")]
+	agg.mu.Unlock()
+	if s.Volume24h == nil || !s.Volume24h.Equal(dec("4242")) {
+		t.Errorf("volume_24h = %v, want the candle-derived 4242", s.Volume24h)
+	}
+}
+
 func TestAggregator_FlushLoop_UpsertsTickedSymbolsOnly(t *testing.T) {
 	agg, fw, clock, _ := newTestAggregator(t)
 	ctx, cancel := context.WithCancel(context.Background())

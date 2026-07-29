@@ -237,6 +237,17 @@
 .t-session--inactive {
   color: var(--t-color-session-inactive);
 }
+/* Shown only when no session is open, so an all-dim strip reads as a stated
+   market state rather than a broken widget. Deliberately quiet — it's a
+   status note, not an alert. */
+.t-statusbar__sessions-closed {
+  color: var(--t-color-session-inactive);
+  border: 1px solid var(--t-color-session-inactive);
+  border-radius: 2px;
+  padding: 0 var(--t-space-sm);
+  font-size: var(--t-font-size-label);
+  white-space: nowrap;
+}
 .t-statusbar__ticker {
   flex: 1;
   overflow: hidden;
@@ -606,6 +617,65 @@
   border-color: var(--t-color-accent-amber-dim);
   color: var(--t-color-accent-amber);
 }
+/* One-click preset chips (2026-07-26). Wraps rather than scrolls: the set is
+   bounded (built-ins only) and a hidden chip is a chip nobody clicks. */
+.t-screener__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--t-space-sm);
+  padding: var(--t-space-sm) 0;
+}
+.t-screener__preset-chip {
+  background: transparent;
+  border: 1px solid var(--t-color-border);
+  border-radius: 2px;
+  color: var(--t-color-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-font-size-label);
+  padding: 2px var(--t-space-sm);
+  white-space: nowrap;
+}
+.t-screener__preset-chip:hover {
+  color: var(--t-color-text);
+  border-color: var(--t-color-accent-amber-dim);
+}
+.t-screener__preset-chip.is-active {
+  color: var(--t-color-accent-amber);
+  border-color: var(--t-color-accent-amber);
+}
+
+/* Venue-priority picker (2026-07-26): a compact ordered list — the order IS
+   the setting, so it's rendered as an <ol> with move controls rather than as
+   a set of independent toggles like the column picker. */
+.t-screener__venue-priority {
+  padding: var(--t-space-sm) 0;
+}
+.t-screener__venue-priority-hint {
+  margin: 0 0 var(--t-space-sm);
+  color: var(--t-color-text-muted);
+  font-size: var(--t-font-size-label);
+}
+.t-screener__venue-list {
+  list-style: none;
+  margin: 0 0 var(--t-space-sm);
+  padding: 0;
+}
+.t-screener__venue-row {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-sm);
+  padding: 2px 0;
+}
+.t-screener__venue-rank {
+  width: 2ch;
+  color: var(--t-color-text-muted);
+  text-align: right;
+}
+.t-screener__venue-name {
+  min-width: 12ch;
+}
+
 .t-screener__columns-picker,
 .t-screener__save-as {
   display: flex;
@@ -680,6 +750,16 @@
 .t-screener__row:hover {
   background: var(--t-color-surface-raised);
 }
+/* 2026-07-18: rows are clickable when ScreenerTable is given onSymbolClick
+   (docs/best-price.md's Screener → symbol-detail-tab flow). Focus outline
+   matches the button/sort-header convention elsewhere in this file. */
+.t-screener__row--clickable {
+  cursor: pointer;
+}
+.t-screener__row--clickable:focus-visible {
+  outline: 1px solid var(--t-color-accent-amber);
+  outline-offset: -1px;
+}
 .t-screener__td {
   padding: 0 var(--t-space-md);
   height: var(--t-density-row);
@@ -714,6 +794,31 @@
   text-overflow: ellipsis;
 }
 
+/* ── sticky identity column (2026-07-18) ──
+   The first column (symbol, by default column order — see columnConfig.ts's
+   DEFAULT_VISIBLE_COLUMNS/BestPriceTable's ALL_BEST_PRICE_COLUMNS) stays
+   pinned to the left edge of the table's own horizontal scroll, so the
+   metric columns can scroll underneath it without ever hiding which coin a
+   row belongs to ("the names of the coins are not visible, even when I move
+   the gesture to the right and left" — the real bug behind this was the
+   unset column collapsing to ~0px, fixed in ScreenerTable.tsx/
+   BestPriceTable.tsx's COLUMN_WIDTH_PX; this stickiness is the follow-up
+   UX improvement so a narrow panel is still comfortable to scroll rather
+   than just "no longer literally broken"). Needs its own explicit
+   background (not inherited) so sliding cells from other columns don't show
+   through underneath it while scrolling. z-index 2 sits above sibling cells
+   (unset, z-index auto) in the same row/header. ── */
+.t-screener__table--fixed .t-screener__th:first-child,
+.t-screener__table--fixed .t-screener__td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--t-color-surface-panel);
+}
+.t-screener__table--fixed .t-screener__row:hover .t-screener__td:first-child {
+  background: var(--t-color-surface-raised);
+}
+
 /* ── venue badge (P1.7b best-price table — which exchange won this side) ── */
 .t-screener__venue {
   font-family: var(--t-font-mono);
@@ -721,6 +826,19 @@
   text-transform: uppercase;
   color: var(--t-color-text-secondary);
   letter-spacing: 0.02em;
+}
+/* 2026-07-18: venue badges that link out to the real exchange (Best Price
+   bid/ask venues, Screener's exchange cell) — reset the browser's default
+   link styling to match the plain badge look, add an underline only on
+   hover/focus as the sole affordance that it's clickable. */
+.t-screener__venue--link {
+  text-decoration: none;
+  cursor: pointer;
+}
+.t-screener__venue--link:hover,
+.t-screener__venue--link:focus-visible {
+  color: var(--t-color-text-primary);
+  text-decoration: underline;
 }
 
 /* ── running-line reveal for overflowing cell content (MarqueeText.tsx —
@@ -827,6 +945,17 @@
 }
 .t-filter__value {
   width: 96px;
+}
+/* Percent fields show a trailing "%" so the unit is visible without a legend —
+   the value is stored as a fraction but always typed/displayed as percent. */
+.t-filter__value-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.t-filter__unit {
+  color: var(--t-color-text-muted);
+  font-size: var(--t-font-size-label);
 }
 .t-filter__select--multi {
   min-width: 120px;

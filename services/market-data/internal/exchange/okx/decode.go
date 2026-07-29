@@ -8,9 +8,13 @@ import (
 	"github.com/terminal/market-data/internal/norm"
 )
 
-// argEnvelope is the shared v5 public-channel wrapper. Subscribe
-// acks/errors carry "event" instead of "arg"/"data" — classify treats those
-// as ignorable, same as Bybit's non-topic frames.
+// argEnvelope is the shared v5 public-channel wrapper. Subscribe/unsubscribe
+// acks and errors carry "event" — and, contrary to this struct's older
+// assumption, OKX subscribe acks ALSO carry "arg" (echoing back the
+// channel/instId that was just subscribed): `{"event":"subscribe",
+// "arg":{"channel":"trades","instId":"BTC-USDT-SWAP"},"connId":"..."}`. Real
+// data pushes never carry "event" at all. classify checks Event first for
+// exactly this reason — see the real bug this caused below.
 type argEnvelope struct {
 	Event string `json:"event,omitempty"`
 	Arg   *struct {
@@ -24,6 +28,22 @@ type argEnvelope struct {
 // classify handles OKX's literal-text ping/pong (not a JSON frame) before
 // attempting to decode anything as JSON, then reports the channel name +
 // instId, or ok=false for acks/errors/pongs.
+//
+// Real bug found + fixed 2026-07-18: this used to check only `env.Arg ==
+// nil` to filter out acks/errors, on the assumption that acks don't carry
+// "arg". They do (see the struct doc above) — so every subscribe ack was
+// being misclassified as a real data push and handed to decodeTrades/
+// decodeFunding/decodeOI/decodeBook5, all of which failed on the ack's
+// missing "data" field ("unexpected end of JSON input"). Harmless in
+// isolation, but ws.go's 2026-07-18 batched SUBSCRIBE (subscribeAll, fixing
+// the earlier 1009 "message too big") multiplies how many ack frames one
+// shard receives right after connecting — OKX acks each subscribed arg
+// individually, so a 200-symbol shard produces on the order of 2000 acks in
+// a burst. That burst was flooding the single-goroutine read/decode loop
+// with failed-decode work, which is what was actually behind the "dropped
+// message; consumer too slow" flood alongside it, not primarily real message
+// volume. Fixed by checking `Event != ""` first: real data pushes never
+// carry "event", acks/errors always do (with or without "arg").
 func classify(raw []byte) (channel, instID, action string, env argEnvelope, ok bool, err error) {
 	if string(raw) == "pong" {
 		return "", "", "", argEnvelope{}, false, nil
@@ -31,8 +51,8 @@ func classify(raw []byte) (channel, instID, action string, env argEnvelope, ok b
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return "", "", "", argEnvelope{}, false, fmt.Errorf("okx: classify: %w", err)
 	}
-	if env.Arg == nil {
-		return "", "", "", env, false, nil // subscribe ack / error frame
+	if env.Event != "" || env.Arg == nil {
+		return "", "", "", env, false, nil // subscribe/unsubscribe ack, or error frame
 	}
 	return env.Arg.Channel, env.Arg.InstID, env.Action, env, true, nil
 }

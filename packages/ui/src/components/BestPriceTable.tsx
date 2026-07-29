@@ -19,7 +19,8 @@
  * genuinely new visual elements (the venue badge) get their own class.
  */
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
-import { bestPriceRowKey, type BestPriceRow, type Dec, type Locale } from '@terminal/types';
+import { bestPriceRowKey, exchangeTradeUrl, type BestPriceRow, type Dec, type Locale } from '@terminal/types';
+import { t } from '@terminal/i18n';
 import { MarqueeText } from './MarqueeText.js';
 import { NumCell } from './NumCell.js';
 import { visibleRange } from '../virtualize.js';
@@ -55,17 +56,25 @@ export const ALL_BEST_PRICE_COLUMNS: readonly BestPriceColumnId[] = [
 // scrolling constantly swaps which rows are mounted, the browser reflows
 // every column width to match, and rows can visually collapse/misalign mid-
 // scroll ("the size changes... sometimes nothing is visible" — reported
-// 2026-07-17). `symbol` deliberately has no fixed width: with
-// `table-layout: fixed` a column left unset absorbs whatever space the
-// others don't claim, so it's the one column allowed to flex.
+// 2026-07-17).
+//
+// `symbol` used to deliberately have no fixed width so it would absorb
+// whatever space the fixed columns didn't claim — but that only works when
+// there's space left over. Real bug found 2026-07-18 (on ScreenerTable,
+// same COLUMN_WIDTH_PX pattern, same root cause here): `table-layout: fixed`
+// grows the *table* to fit the fixed columns, but an unset column just gets
+// 0px once a narrow panel's fixed columns alone already exceed the panel
+// width — genuinely invisible, not just scrolled out of view. Fixed by
+// giving `symbol` a real width like every other column, plus a sticky-left
+// first column (terminal.css) so it's still visible while the metric
+// columns scroll underneath it.
 //
 // bestBidVenue/bestAskVenue are narrower than the other fixed columns
 // (56, not 84) — per John's 2026-07-17 feedback that the venue badges made
 // the table feel "folded," and the symbol is what he actually scans for.
-// Venue names still fully readable on hover (MarqueeText); the column just
-// no longer claims more width than a short badge needs at rest, so the
-// symbol column (unset — the one that flexes) gets the reclaimed space.
+// Venue names still fully readable on hover (MarqueeText).
 const COLUMN_WIDTH_PX: Partial<Record<BestPriceColumnId, number>> = {
+  symbol: 120,
   bestBidVenue: 56,
   bestBid: 104,
   bestBidSize: 84,
@@ -80,7 +89,25 @@ function Cell({ id, row, locale }: { id: BestPriceColumnId; row: BestPriceRow; l
   if (id === 'symbol') return <span className="t-screener__text">{row.symbol}</span>;
   if (id === 'bestBidVenue' || id === 'bestAskVenue') {
     const venue = row[id];
-    return venue ? <span className="t-screener__venue">{venue}</span> : <span className="t-num t-num--empty">—</span>;
+    if (!venue) return <span className="t-num t-num--empty">—</span>;
+    // 2026-07-18: venue badges link out to that exchange's real trading page
+    // for this symbol (docs/best-price.md) — falls back to a plain badge for
+    // a venue string exchangeTradeUrl doesn't recognize, rather than a dead
+    // link.
+    const url = exchangeTradeUrl(venue, row.symbol);
+    if (!url) return <span className="t-screener__venue">{venue}</span>;
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="t-screener__venue t-screener__venue--link"
+        title={t(locale, 'common.open_on_exchange', { symbol: row.symbol, exchange: venue })}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {venue}
+      </a>
+    );
   }
   if (id === 'venueCount') return <span className="t-num">{row.venueCount}</span>;
   const value = row[id] as Dec | null;

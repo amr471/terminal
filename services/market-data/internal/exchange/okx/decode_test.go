@@ -29,18 +29,29 @@ func TestClassify_LiteralPongIgnored(t *testing.T) {
 }
 
 func TestClassify_SubscribeAckIgnored(t *testing.T) {
+	// Real bug found 2026-07-18: event acks DO carry "arg" on OKX (they
+	// echo back the channel/instId just subscribed), so a naive `Arg == nil`
+	// check alone does NOT filter them out — they used to reach handle()
+	// and fail to decode ("unexpected end of JSON input" on the missing
+	// "data" field). classify() now checks Event != "" first; assert that
+	// actually holds, not just document the shape.
 	_, _, _, _, ok, err := classify([]byte(`{"event":"subscribe","arg":{"channel":"trades","instId":"BTC-USDT-SWAP"},"connId":"x"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// event acks DO carry "arg" on OKX — but this package treats any
-	// "event" frame as non-data by checking Arg==nil first; a subscribe ack
-	// still has an arg, so make sure we're routing on Data presence
-	// correctly elsewhere (handle() only calls decode* for known channels,
-	// data will be empty here so decode would just return zero rows,
-	// harmless either way). This test documents the shape, not a strict
-	// ok=false requirement.
-	_ = ok
+	if ok {
+		t.Fatal("subscribe ack (event+arg both present) should be ok=false, not routed as a data push")
+	}
+}
+
+func TestClassify_ErrorEventWithoutArgIgnored(t *testing.T) {
+	_, _, _, _, ok, err := classify([]byte(`{"event":"error","code":"60012","msg":"Invalid request"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("error frame should be ok=false")
+	}
 }
 
 func TestDecodeTrades(t *testing.T) {

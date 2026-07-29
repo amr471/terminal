@@ -41,18 +41,44 @@ function zonedParts(date: Date, tz: string): ZonedParts {
   return { weekday: get('weekday'), minutes: hour * 60 + Number(get('minute')) };
 }
 
-const WEEKEND = new Set(['Sat', 'Sun']);
-
-/** Is the given session open at this instant (Mon–Fri, local window)? */
+/**
+ * Is the given session's HOUR BAND active at this instant?
+ *
+ * Deliberately 24/7 — the weekday is NOT considered (John, 2026-07-26). This
+ * is a crypto-first terminal: crypto trades through the weekend, and its
+ * liquidity still follows the regional hours these bands mark, so a strip that
+ * goes fully dim Sat/Sun is dead weight exactly when a crypto trader is
+ * looking at it. Equities/FX being shut is surfaced separately by
+ * isMarketWeekend() rather than by blanking the whole strip.
+ */
 export function isSessionOpen(session: TradingSession, date: Date = new Date()): boolean {
   const w = SESSION_WINDOWS[session];
-  const { weekday, minutes } = zonedParts(date, w.tz);
-  if (WEEKEND.has(weekday)) return false;
+  const { minutes } = zonedParts(date, w.tz);
   return minutes >= w.openMin && minutes < w.closeMin;
 }
 
 export function activeSessions(date: Date = new Date()): TradingSession[] {
   return (Object.keys(SESSION_WINDOWS) as TradingSession[]).filter((s) => isSessionOpen(s, date));
+}
+
+/**
+ * True during the FX/equities weekend closure. Since isSessionOpen went 24/7,
+ * this no longer dims the session bands — it drives a separate marker saying
+ * **equities and FX** are shut while the hour band is lit and crypto trades on.
+ *
+ * Uses the industry-standard FX weekend window, expressed in New York time:
+ * from Friday's 17:00 NY close to Sunday's 17:00 NY reopen (Sydney's Monday
+ * morning). A naive "is it Sat/Sun somewhere" check gets this wrong in both
+ * directions, because the hubs straddle the dateline — at Sunday 12:57 NY it's
+ * already Monday in Sydney, yet the market is very much still shut.
+ */
+export function isMarketWeekend(date: Date = new Date()): boolean {
+  const { weekday, minutes } = zonedParts(date, SESSION_WINDOWS.new_york.tz);
+  const reopen = 17 * 60; // Sunday 17:00 NY — Sydney's Monday open
+  if (weekday === 'Sat') return true;
+  if (weekday === 'Fri') return minutes >= reopen;
+  if (weekday === 'Sun') return minutes < reopen;
+  return false;
 }
 
 /** Pairs of simultaneously open sessions — the high-liquidity overlap markers. */

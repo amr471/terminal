@@ -159,15 +159,16 @@ func (f *WSFeed) handle(dec []byte) {
 
 func (f *WSFeed) emit(symbol, kind, tf string, typ norm.MessageType, ts int64, data any) {
 	ch := norm.Channel{Exchange: exchangeName, Symbol: symbol, Kind: kind, TF: tf}
-	env := norm.Envelope{
+	// Seq only assigned on actual enqueue — see binance/ws.go's WSFeed.emit
+	// comment for the full reasoning (same fix, applied repo-wide, 2026-07-19).
+	if len(f.msgs) >= cap(f.msgs) {
+		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
+		return
+	}
+	f.msgs <- conn.RawMsg{Channel: ch, Env: norm.Envelope{
 		V: 1, Type: typ, Src: exchangeName, Sym: symbol,
 		TS: ts, RTS: time.Now().UnixMilli(), Seq: f.seq.Add(1), Data: data,
-	}
-	select {
-	case f.msgs <- conn.RawMsg{Channel: ch, Env: env}:
-	default:
-		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
-	}
+	}}
 }
 
 func (f *WSFeed) Messages() <-chan conn.RawMsg { return f.msgs }

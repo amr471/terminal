@@ -123,15 +123,16 @@ func (f *OIFeed) fetchOI(ctx context.Context, symbol string) (norm.OI, int64, er
 
 func (f *OIFeed) emit(symbol string, ts int64, oi norm.OI) {
 	ch := norm.Channel{Exchange: exchangeName, Symbol: symbol, Kind: norm.KindOI}
-	env := norm.Envelope{
+	// Seq only assigned on actual enqueue — see binance/oi.go's OIFeed.emit
+	// comment (same fix, same single-producer reasoning, 2026-07-19).
+	if len(f.msgs) >= cap(f.msgs) {
+		f.log.Warn("dropped OI reading; consumer too slow", "symbol", symbol)
+		return
+	}
+	f.msgs <- conn.RawMsg{Channel: ch, Env: norm.Envelope{
 		V: 1, Type: norm.TypeOI, Src: exchangeName, Sym: symbol,
 		TS: ts, RTS: time.Now().UnixMilli(), Seq: f.seq.Add(1), Data: oi,
-	}
-	select {
-	case f.msgs <- conn.RawMsg{Channel: ch, Env: env}:
-	default:
-		f.log.Warn("dropped OI reading; consumer too slow", "symbol", symbol)
-	}
+	}}
 }
 
 func (f *OIFeed) Messages() <-chan conn.RawMsg { return f.msgs }

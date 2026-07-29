@@ -231,6 +231,137 @@ fully readable on hover via `MarqueeText`; at rest they're already
 secondary-colored/label-sized (`.t-screener__venue`) so no further visual
 de-emphasis was layered on top of the width change.
 
+## Real bug found + fixed: symbol column could render at ~0px width (2026-07-18)
+
+Same root cause as `docs/screener-ui.md`'s matching section (read that one
+for the full CSS explanation): `symbol` being left unset in `COLUMN_WIDTH_PX`
+so it could "flex" into leftover space only works when there IS leftover
+space, and the previous entry's fix (narrowing the venue columns) made that
+worse, not better, once the panel itself is narrow — with `table-layout:
+fixed`, a table's width only grows to fit its *explicitly widthed* columns,
+so `symbol` could get 0px in a narrowed panel regardless of how much room
+the other columns gave up to it. Fixed the same way as ScreenerTable: `symbol`
+now has a real 120px width, and `terminal.css`'s new sticky-left first-column
+rule (shared `.t-screener__table--fixed` class) keeps it visible while
+`bestBid`/`bestAsk`/etc. scroll underneath. Verified: `tsc --noEmit` clean,
+`@terminal/ui`'s 58/58 tests green, `eslint` clean.
+
+**Product question raised alongside the bug, not yet acted on:** John asked
+why this panel (right column of the default layout) exists at all given the
+Screener (left column) is already there, since both looked equally cramped
+before the fix above. Answered in chat, recorded here for continuity: the
+two tables answer different questions and aren't actually redundant —
+Screener is one row per **(exchange, symbol) pair**, filterable/sortable
+across every metric, built for *discovering* instruments ("find me
+high-volume negative-funding coins, across every venue that lists them").
+This panel is one row per **symbol**, consolidated across every venue, built
+for *execution* ("I already know I want BTC — which connected venue has the
+tightest spread right now"). `defaultLayoutDefinition()` gives both equal
+1-unit columns, which is what made both feel cramped at once; whether that
+default should change (give this panel more width, since it inherently has
+fewer columns than Screener, or dock it somewhere else) is still open —
+John should look again now that the invisible-symbol bug is fixed before
+deciding whether the layout itself needs to change too.
+
+## Product decision: dropped from the default layout, replaced by a Screener-row click-through (2026-07-18)
+
+Following up on the open question above: John looked at real reference
+screenshots of a third-party funding-rate arbitrage scanner (a list view
+plus a per-symbol "Chart-Spread" detail page) and said the persistent
+right-hand panel felt "awkward" and asked why it was needed at all "if you
+need a spread, you can have a person click on the desired coin in this list
+and a similar page opens in a new tab." Two different-sized changes were
+tangled in that one message — a full arbitrage-scanner rebuild (real Phase-2
+scope, CLAUDE.md §10) vs. simply removing the side panel and adding a
+click-through — so this was posed back via `AskUserQuestion` rather than
+guessed. John picked the small option both times: **drop the panel, no new
+backend math, ships same day.**
+
+What actually changed:
+
+- `defaultLayoutDefinition()` (`packages/types/src/layout.ts`) is back to
+  P1.3's original 2 columns (Screener | Chart+News) — the third `bestprice`
+  column added at P1.7b is gone. `'bestprice'` stays in
+  `TERMINAL_PANEL_KINDS`; `BestPricePanel`/`BestPriceTable` are unchanged
+  and still fully live. **Existing saved tabs are untouched** — this only
+  changes what a *new* tab starts with, same as every previous
+  `defaultLayoutDefinition()` change.
+- `BestPricePanel` gained an optional `symbolFilter?: string` prop — filters
+  the same full-universe live `rows` client-side to one symbol. No wire
+  protocol change; `bestPriceHub.ts` still has no per-subscriber filter, by
+  design (every subscriber gets the same consolidated stream).
+- `ScreenerTable` (`@terminal/ui`) gained an optional `onSymbolClick?:
+  (symbol: string) => void` prop. When set, rows become clickable
+  (`role="button"`, `tabIndex=0`, Enter/Space activate) with a
+  `t-screener__row--clickable` cursor + focus-ring affordance
+  (`terminal.css`). `ScreenerPanel` wires it to
+  `window.open(\`/${locale}/terminal/symbol/${symbol}\`, '_blank')` — a
+  **real new browser tab**, not P1.3a's internal workspace-tab strip; this
+  is a one-off detail view, not a saved layout.
+- New route: `apps/web/src/app/[locale]/terminal/symbol/[symbol]/page.tsx`.
+  Session-gated with the exact same `/auth/me` cookie-forward pattern
+  `terminal/page.tsx` uses (fetch wrapped in try/catch, `redirect()` called
+  outside the catch). Deliberately **not** the full terminal shell — no
+  `IconRail`/`TerminalCommandBar`/`TerminalTabs` — just a back link, a
+  title, and `<BestPricePanel symbolFilter={symbol} />`, reusing
+  `terminal-shell.css`'s layout wrapper classes (already loaded for the
+  whole `[locale]` segment) for a consistent look with two new page-specific
+  classes (`t-symbol-detail__back`/`__title`).
+- New i18n keys `bestprice.symbol_detail.title` / `bestprice.symbol_detail.back`
+  in both `en.ts` and `ru.ts`.
+
+Verified: `tsc --noEmit` clean for `@terminal/types`/`@terminal/ui`/
+`@terminal/web`; `@terminal/types` 31/31 and `@terminal/ui` 58/58 tests
+green; `eslint` clean for `@terminal/ui` and `@terminal/web`. Not yet
+verified on a real browser (click-through navigation, new-tab auth
+round-trip, RU copy) — flag for John's next live pass.
+
+**Explicitly out of scope, per John's own answer:** the full funding-rate
+arbitrage scanner (Buy/Sell venue pairs, Fund/1d/7d/30d columns, F Spread
+APR, a spread-over-time chart) from the reference screenshots. That's real
+Phase-2 "market-intelligence edge" work (CLAUDE.md §10) — cross-venue
+spreads/arbitrage, not this. If it's picked up later it should get its own
+doc rather than folding into this one.
+
+**Follow-up, same day:** John also asked why the new detail page has no
+spread chart (the second reference screenshot). Investigated before
+building anything: no gateway route reads the `candles` hypertable that
+`services/market-data` already writes (grepped — zero candle/kline/ohlc
+routes), and `apps/web` has no charting library installed at all. That's
+squarely **P1.8 "Charts"** (`TASKS.md`, unstarted), not something to
+improvise inside this page. Asked via `AskUserQuestion`; **he chose "Skip
+for now"** — the symbol-detail page stays the price table only until P1.8
+comes up in the normal roadmap order.
+
+## Venue badges link out to the real exchange (2026-07-18)
+
+Follow-up ask on the new symbol-detail page: clicking a venue name should
+open that exchange's actual trading page for this symbol, not just display
+the badge. `packages/types/src/exchangeLinks.ts`'s `exchangeTradeUrl(venue,
+symbol)` is a pure per-venue URL template, verified against each of the
+eight venues' real URL scheme via live web search 2026-07-18 (not guessed —
+see the file's per-case comments for the confirmed pattern each was checked
+against). Every tracked symbol is USDT-margined-perp and normalized to
+lowercase base+quote concatenated with no separator (`norm.NormalizeSymbol`,
+services/market-data), so the one non-trivial join point is KuCoin's BTC→XBT
+rename + `M` suffix (`kucoinWireSymbol`), ported from
+`services/market-data/internal/exchange/kucoin/kucoin.go`'s `wireSymbol`
+since that mapping is Go-only and wasn't reachable from the frontend.
+Unrecognized venue strings return `null` rather than a guessed/broken URL —
+`BestPriceTable`'s `bestBidVenue`/`bestAskVenue` cells fall back to a plain
+badge in that case.
+
+`BestPriceTable`'s venue badges are now `<a target="_blank">` when a URL
+resolves, `title` set to the new `common.open_on_exchange` i18n key
+(shared with `ScreenerTable`'s matching exchange-cell link, see
+docs/screener-ui.md), `.t-screener__venue--link` (terminal.css) resets the
+browser's default link color/underline to match the existing badge look,
+adding an underline only on hover/focus as the click affordance.
+
+Verified: `@terminal/types` 41/41 (was 31, +10 new `exchangeTradeUrl`
+tests), `tsc --noEmit`/`eslint` clean across `@terminal/types`/
+`@terminal/ui`/`@terminal/web`.
+
 ## Testing
 
 - `bestPrice.test.ts` (`@terminal/types`) — `subtractDec` exactness, the

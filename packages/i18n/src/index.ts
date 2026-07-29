@@ -43,6 +43,7 @@ export {
   isSessionOpen,
   activeSessions,
   sessionOverlaps,
+  isMarketWeekend,
   nyClock,
   type SessionWindow,
   type NyClock,

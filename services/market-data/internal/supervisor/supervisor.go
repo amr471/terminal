@@ -100,11 +100,30 @@ func (s *Supervisor) runVenue(ctx context.Context, a exchange.Adapter) {
 			log.Warn("instrument discovery failed; keeping current shards", "err", err, "code", "MD-1004")
 			return
 		}
-		capped := applyCap(syms, s.cfg.MaxSymbolsPerVenue)
+		// Rank before capping so MAX_SYMBOLS_PER_VENUE keeps the highest-volume
+		// symbols, not the alphabetically-first ones (P1.5f — see
+		// exchange.VolumeRanker; the old behavior subscribed `akeusdt` and
+		// skipped `xrpusdt`, leaving majors with no funding or open interest).
+		// A ranking failure is non-fatal: applyCap's alphabetical order still
+		// applies, which is deterministic and so doesn't churn the universe.
+		ranked := sortedByName(syms)
+		if vr, ok := a.(exchange.VolumeRanker); ok {
+			if byVol, rerr := vr.RankByVolume(ctx, ranked); rerr != nil {
+				log.Warn("volume ranking failed; falling back to alphabetical cap", "err", rerr)
+			} else {
+				ranked = byVol
+			}
+		}
+		capped := applyCap(ranked, s.cfg.MaxSymbolsPerVenue)
 		s.reconcile(ctx, a, log, running, assignShards(capped, count))
 		s.prune(ctx, a.Name(), live, capped)
 		log.Info("universe reconciled", "symbols", len(syms), "subscribed", len(live), "shards", len(running))
 	}
+
+	// Venue-wide singleton feeds (P1.5e, e.g. the all-market 24h ticker) start
+	// once and live for the venue context — they cover every symbol already, so
+	// they must not be duplicated per shard or restarted on shard churn.
+	venueDone := s.startVenueFeeds(ctx, a, log)
 
 	discover() // immediate first pass, don't wait a full interval for any data
 
@@ -114,9 +133,30 @@ func (s *Supervisor) runVenue(ctx context.Context, a exchange.Adapter) {
 			discover()
 		case <-ctx.Done():
 			s.stopAll(running)
+			venueDone.Wait()
 			return
 		}
 	}
+}
+
+// startVenueFeeds runs one manager per venue-wide feed if the adapter opts into
+// exchange.VenueFeeder. Adapters that don't implement it get an immediately-
+// satisfied WaitGroup, so the caller needs no special case.
+func (s *Supervisor) startVenueFeeds(ctx context.Context, a exchange.Adapter, log *slog.Logger) *sync.WaitGroup {
+	done := &sync.WaitGroup{}
+	vf, ok := a.(exchange.VenueFeeder)
+	if !ok {
+		return done
+	}
+	for _, feed := range vf.VenueFeeds(log) {
+		mgr := conn.NewManager(feed, s.sink, s.states, log)
+		done.Add(1)
+		go func() {
+			defer done.Done()
+			mgr.Run(ctx) // venue ctx: stops with the supervisor, not with a shard
+		}()
+	}
+	return done
 }
 
 // reconcile applies one discovery cycle: stop shards that changed or delisted,

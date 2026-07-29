@@ -7,7 +7,7 @@
 import type { ReactNode } from 'react';
 import type { Locale, TradingSession } from '@terminal/types';
 import { TRADING_SESSIONS } from '@terminal/types';
-import { t, nyClock, activeSessions, sessionOverlaps } from '@terminal/i18n';
+import { t, nyClock, activeSessions, sessionOverlaps, isMarketWeekend } from '@terminal/i18n';
 
 export interface StatusBarProps {
   locale: Locale;
@@ -44,6 +44,7 @@ export function StatusBar({
   const clock = nyClock(now);
   const open = new Set<TradingSession>(activeSessions(now));
   const overlapping = new Set<TradingSession>(sessionOverlaps(now).flat());
+  const isWeekend = isMarketWeekend(now);
 
   return (
     <div className="t-statusbar" role="banner">
@@ -66,6 +67,24 @@ export function StatusBar({
           );
         })}
       </ul>
+
+      {/* Two independent states since 2026-07-26 (John's call):
+          - The hour bands above highlight 24/7 (crypto never stops), so a
+            weekend no longer blanks the strip.
+          - `isWeekend` still marks that EQUITIES/FX are shut, so a lit New York
+            band on a Sunday isn't mistaken for an open equities session.
+          - `open.size === 0` is now only a genuine between-bands gap. */}
+      {isWeekend ? (
+        <span className="t-statusbar__sessions-closed" data-weekend>
+          {t(locale, 'status.session.weekend')}
+        </span>
+      ) : (
+        open.size === 0 && (
+          <span className="t-statusbar__sessions-closed">
+            {t(locale, 'status.session.all_closed')}
+          </span>
+        )
+      )}
 
       <div className="t-statusbar__ticker">{ticker}</div>
 

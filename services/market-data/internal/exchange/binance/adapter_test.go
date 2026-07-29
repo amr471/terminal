@@ -4,6 +4,8 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+
+	"github.com/terminal/market-data/internal/exchange"
 )
 
 func testLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -34,7 +36,28 @@ func TestAdapterFeedTopology(t *testing.T) {
 }
 
 func TestAdapterProvidedKinds(t *testing.T) {
-	if got := len(Adapter().ProvidedKinds()); got != 5 {
-		t.Fatalf("ProvidedKinds len = %d, want 5", got)
+	// 6 since P1.5e added norm.KindTicker (the all-market 24h ticker feed).
+	if got := len(Adapter().ProvidedKinds()); got != 6 {
+		t.Fatalf("ProvidedKinds len = %d, want 6", got)
+	}
+}
+
+// The all-market ticker is a VENUE-WIDE singleton, not a per-shard feed:
+// `!ticker@arr` already covers every symbol, so routing it through Feeds()
+// would open one duplicate connection per shard (see ticker.go).
+func TestAdapterVenueFeeds(t *testing.T) {
+	vf, ok := Adapter().(exchange.VenueFeeder)
+	if !ok {
+		t.Fatal("binance adapter should implement exchange.VenueFeeder")
+	}
+	feeds := vf.VenueFeeds(testLog())
+	if len(feeds) != 1 || feeds[0].Name() != "binance.ws.ticker" {
+		t.Fatalf("VenueFeeds = %+v, want one binance.ws.ticker", feeds)
+	}
+	// And it must NOT also appear in the per-shard feed set.
+	for _, f := range Adapter().Feeds([]string{"btcusdt"}, testLog()) {
+		if f.Name() == "binance.ws.ticker" {
+			t.Error("ticker feed must not be per-shard — it would be duplicated per shard")
+		}
 	}
 }

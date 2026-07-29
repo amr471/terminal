@@ -12,6 +12,7 @@ const (
 	KindCandles = "candles"
 	KindFunding = "funding"
 	KindOI      = "oi"
+	KindTicker  = "ticker"
 )
 
 var validTFs = map[string]bool{

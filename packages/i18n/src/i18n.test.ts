@@ -13,6 +13,7 @@ import {
   isSessionOpen,
   activeSessions,
   sessionOverlaps,
+  isMarketWeekend,
   nyClock,
   isValidTimezone,
 } from './index.js';
@@ -117,10 +118,35 @@ test('Tokyo/London do not overlap in summer (BST); Sydney/Tokyo do', () => {
   assert.deepEqual(activeSessions(d), ['sydney', 'tokyo']);
 });
 
-test('weekends: everything closed (local weekday check)', () => {
-  const saturday = new Date('2026-07-18T12:00:00Z');
-  assert.deepEqual(activeSessions(saturday), []);
-  assert.equal(isSessionOpen('london', saturday), false);
+// Changed 2026-07-26 (John's call): session bands are 24/7 now. Crypto trades
+// through the weekend and its liquidity still follows these regional hours, so
+// the weekday is no longer part of isSessionOpen. Equities/FX being shut is
+// reported separately by isMarketWeekend.
+test('sessions highlight on weekends too (24/7 crypto bands)', () => {
+  // Sat 2026-07-18 12:00Z = 08:00 EDT — inside New York's 08:00–17:00 band.
+  const saturday = new Date('2026-07-18T13:00:00Z'); // 09:00 EDT
+  assert.equal(isSessionOpen('new_york', saturday), true);
+  assert.ok(activeSessions(saturday).includes('new_york'));
+});
+
+test('isMarketWeekend flags equities/FX closure without dimming the bands', () => {
+  // The exact instant from John's 2026-07-26 screenshot (Sun 12:57 EDT): New
+  // York's band IS lit (this was the complaint), and the weekend marker
+  // explains that equities/FX are nonetheless shut.
+  const sunday = new Date('2026-07-26T16:57:00Z');
+  assert.equal(isSessionOpen('new_york', sunday), true);
+  assert.equal(isMarketWeekend(sunday), true);
+
+  // A weeknight gap is not the weekend.
+  assert.equal(isMarketWeekend(new Date('2026-07-22T23:00:00Z')), false);
+
+  // Boundaries of the FX weekend window (Fri 17:00 NY -> Sun 17:00 NY).
+  // 2026-07-24 is a Friday; EDT = UTC-4.
+  assert.equal(isMarketWeekend(new Date('2026-07-24T20:59:00Z')), false); // Fri 16:59 NY
+  assert.equal(isMarketWeekend(new Date('2026-07-24T21:00:00Z')), true); // Fri 17:00 NY
+  assert.equal(isMarketWeekend(new Date('2026-07-25T16:11:00Z')), true); // Sat
+  assert.equal(isMarketWeekend(new Date('2026-07-26T20:59:00Z')), true); // Sun 16:59 NY
+  assert.equal(isMarketWeekend(new Date('2026-07-26T21:00:00Z')), false); // Sun 17:00 NY reopen
 });
 
 test('session boundaries are half-open [open, close)', () => {

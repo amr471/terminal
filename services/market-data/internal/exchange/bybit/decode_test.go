@@ -87,18 +87,50 @@ func TestDecodeTicker_FundingAndOIBothPresent(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatal(err, ok)
 	}
-	symbol, ts, funding, oi, err := decodeTicker(parts, env)
+	symbol, ts, decoded, err := decodeTicker(parts, env)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if symbol != "btcusdt" || ts != 1000 {
 		t.Fatalf("symbol/ts = %q/%d", symbol, ts)
 	}
-	if funding == nil || funding.Rate != "0.0001" || funding.NextFundingTS != 1783822800000 {
-		t.Errorf("funding = %+v", funding)
+	if decoded.funding == nil || decoded.funding.Rate != "0.0001" || decoded.funding.NextFundingTS != 1783822800000 {
+		t.Errorf("funding = %+v", decoded.funding)
 	}
-	if oi == nil || oi.OpenInterest != "850000000" {
-		t.Errorf("oi = %+v", oi)
+	if decoded.oi == nil || decoded.oi.OpenInterest != "850000000" {
+		t.Errorf("oi = %+v", decoded.oi)
+	}
+	// No volume fields on this message, so no ticker payload should be emitted.
+	if decoded.ticker != nil {
+		t.Errorf("ticker = %+v, want nil when no 24h volume is present", decoded.ticker)
+	}
+}
+
+// P1.5e: the `tickers` topic we already subscribe also carries the 24h stats
+// the screener filters and sorts on — they used to be decoded and discarded.
+func TestDecodeTicker_Extracts24hStats(t *testing.T) {
+	_, parts, env, ok, err := classify([]byte(`{"topic":"tickers.BTCUSDT","ts":1000,"data":{
+		"symbol":"BTCUSDT","lastPrice":"64000.5","volume24h":"1234.5","turnover24h":"78900000",
+		"price24hPcnt":"-0.052","highPrice24h":"66000","lowPrice24h":"63000"
+	}}`))
+	if err != nil || !ok {
+		t.Fatal(err, ok)
+	}
+	_, _, decoded, err := decodeTicker(parts, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.ticker == nil {
+		t.Fatal("ticker = nil, want 24h stats decoded")
+	}
+	tk := decoded.ticker
+	if tk.Last != "64000.5" || tk.Volume24h != "1234.5" || tk.QuoteVolume24h != "78900000" {
+		t.Errorf("ticker = %+v", tk)
+	}
+	// Bybit already publishes a fraction, so it must pass through UNSCALED
+	// (unlike Binance's "P", which is a percent and gets divided by 100).
+	if tk.Change24h != "-0.052" {
+		t.Errorf("change24h = %q, want -0.052 passed through unscaled", tk.Change24h)
 	}
 }
 
@@ -106,12 +138,12 @@ func TestDecodeTicker_DeltaOmitsUnchangedFields(t *testing.T) {
 	// A delta update that only touches lastPrice (not modeled here) should
 	// leave both funding and OI nil rather than zero-valued.
 	_, parts, env, _, _ := classify([]byte(`{"topic":"tickers.BTCUSDT","ts":1,"data":{"symbol":"BTCUSDT"}}`))
-	_, _, funding, oi, err := decodeTicker(parts, env)
+	_, _, decoded, err := decodeTicker(parts, env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if funding != nil || oi != nil {
-		t.Errorf("funding=%v oi=%v, want both nil for a delta with neither field present", funding, oi)
+	if decoded.funding != nil || decoded.oi != nil || decoded.ticker != nil {
+		t.Errorf("decoded=%+v, want all nil for a delta with none of these fields present", decoded)
 	}
 }
 

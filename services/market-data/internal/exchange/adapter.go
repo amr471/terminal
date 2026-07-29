@@ -68,6 +68,50 @@ type Adapter interface {
 	Instruments(ctx context.Context) ([]string, error)
 }
 
+// VenueFeeder is an OPTIONAL Adapter extension (P1.5e) for feeds that are
+// venue-wide singletons rather than per-shard: one connection covering every
+// symbol at once, independent of how the universe is sharded.
+//
+// The motivating case is the all-market 24h ticker stream (Binance's
+// `!ticker@arr`, Bybit's `tickers.*`, etc.), which delivers 24h volume and
+// percent change for EVERY symbol on the venue in a single subscription.
+// Routing that through Feeds() would open one duplicate copy per shard, so the
+// supervisor starts VenueFeeds() exactly once per venue instead, under the
+// venue context — it lives for the process, unaffected by shard churn as
+// symbols list and delist.
+//
+// Adapters that don't implement this are unaffected (plain type assertion).
+type VenueFeeder interface {
+	// VenueFeeds builds the venue-wide singleton feeds. Called once per venue
+	// at startup; the returned feeds get one conn.Manager each, exactly like
+	// Feeds()' results.
+	VenueFeeds(log *slog.Logger) []conn.Feed
+}
+
+// VolumeRanker is an OPTIONAL Adapter extension (P1.5f) letting a venue order
+// its own instrument list by importance, so MAX_SYMBOLS_PER_VENUE keeps the
+// symbols that matter.
+//
+// Why: the cap previously kept the ALPHABETICALLY-first N symbols, which on a
+// live run meant `akeusdt` was subscribed while `xrpusdt` was not. Only capped
+// symbols get the per-symbol feeds (funding via markPrice, open interest via
+// the REST poller), so funding/OI were populated for obscure "a" coins and
+// blank for BTC-adjacent majors past the mid-alphabet cutoff. Ranking by 24h
+// quote volume puts the cap where it belongs.
+//
+// Adapters that don't implement this keep the deterministic alphabetical
+// fallback — correctness never depends on this call succeeding, and a transient
+// REST failure must not churn the universe (the supervisor keeps the previous
+// order in that case).
+type VolumeRanker interface {
+	// RankByVolume returns `symbols` reordered most-important-first, typically
+	// by 24h quote volume from the venue's REST 24h-ticker endpoint. It may
+	// return fewer symbols than given (unranked ones are appended by the
+	// caller, never dropped). An error means "couldn't rank right now" and is
+	// the caller's to fall back on, not fatal.
+	RankByVolume(ctx context.Context, symbols []string) ([]string, error)
+}
+
 // Limits describes a venue's connection budget. Zero values mean "unknown /
 // not a constraint at our scale" — P1.5a's handful of symbols never
 // approaches any real cap; P1.5c is where these numbers start mattering.

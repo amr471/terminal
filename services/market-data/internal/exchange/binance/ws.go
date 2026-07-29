@@ -48,15 +48,48 @@ func (f *WSFeed) Connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := c.WriteJSON(map[string]any{
-		"method": "SUBSCRIBE", "params": marketSubscribeParams(f.symbols), "id": 1,
-	}); err != nil {
+	f.conn = c
+	// Root-caused 2026-07-22: sending all of WSFeed's streams (~8/symbol, so
+	// ~832 params for a ~100-symbol shard) in ONE SUBSCRIBE frame is rejected
+	// by Binance's gateway with `1008 (policy violation): Invalid request`,
+	// even though the total is well under the 1024 per-connection cap — the
+	// 1024 limit is cumulative across frames, not a per-frame size. The
+	// DepthFeed's single 96-param frame on the same server connects fine, so
+	// the oversized frame is the only differing variable. Fix: subscribe in
+	// small paced batches (see subscribeChunked / maxParamsPerSubscribe).
+	if err := f.subscribeChunked(1); err != nil {
 		_ = c.Close()
+		f.conn = nil
 		return fmt.Errorf("binance.ws: subscribe: %w", err)
 	}
-	f.conn = c
 	f.msgs = make(chan conn.RawMsg, 256)
 	go f.readLoop()
+	return nil
+}
+
+// subscribeSpacing paces SUBSCRIBE frames under Binance's documented limit of
+// 10 incoming messages/sec per connection; 120ms caps us at ~8/sec with margin.
+const subscribeSpacing = 120 * time.Millisecond
+
+// subscribeChunked sends marketSubscribeParams as several small SUBSCRIBE
+// frames (each ≤ maxParamsPerSubscribe) instead of one oversized frame Binance
+// rejects with 1008. Frames are paced by subscribeSpacing to respect the
+// 10-msg/sec incoming limit. idBase seeds the per-frame id (1 for Connect, a
+// higher base for Resync) so acks stay distinguishable in a capture.
+func (f *WSFeed) subscribeChunked(idBase int) error {
+	params := marketSubscribeParams(f.symbols)
+	batches := chunkParams(params, maxParamsPerSubscribe)
+	f.log.Info("subscribing", "symbols", len(f.symbols), "params", len(params), "batches", len(batches))
+	for i, batch := range batches {
+		if i > 0 {
+			time.Sleep(subscribeSpacing)
+		}
+		if err := f.conn.WriteJSON(map[string]any{
+			"method": "SUBSCRIBE", "params": batch, "id": idBase + i,
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -104,15 +137,24 @@ func (f *WSFeed) handle(raw []byte) {
 
 func (f *WSFeed) emit(symbol, kind, tf string, typ norm.MessageType, ts int64, data any) {
 	ch := norm.Channel{Exchange: exchangeName, Symbol: symbol, Kind: kind, TF: tf}
-	env := norm.Envelope{
+	// Seq is only assigned once we know the message will actually enqueue —
+	// real bug found 2026-07-19: assigning it unconditionally before this
+	// check meant a backpressure drop still consumed a sequence number, so
+	// Manager.checkSeq (internal/conn/manager.go) saw a gap and misdiagnosed
+	// an ordinary drop as a real "sequence anomaly," triggering a Resync()
+	// that resubscribes every symbol on the shard — adding SUBSCRIBE traffic
+	// on top of an already-overloaded connection and making the burst worse.
+	// Safe without a lock: emit() only ever runs on this feed's single
+	// readLoop goroutine (sole producer of f.msgs), so checking capacity
+	// then sending can't race with another writer.
+	if len(f.msgs) >= cap(f.msgs) {
+		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
+		return
+	}
+	f.msgs <- conn.RawMsg{Channel: ch, Env: norm.Envelope{
 		V: 1, Type: typ, Src: exchangeName, Sym: symbol,
 		TS: ts, RTS: time.Now().UnixMilli(), Seq: f.seq.Add(1), Data: data,
-	}
-	select {
-	case f.msgs <- conn.RawMsg{Channel: ch, Env: env}:
-	default:
-		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
-	}
+	}}
 }
 
 func (f *WSFeed) Messages() <-chan conn.RawMsg { return f.msgs }
@@ -125,9 +167,11 @@ func (f *WSFeed) Resync(ctx context.Context) error {
 	if f.conn == nil {
 		return nil
 	}
-	if err := f.conn.WriteJSON(map[string]any{
-		"method": "SUBSCRIBE", "params": marketSubscribeParams(f.symbols), "id": 2,
-	}); err != nil {
+	// Same chunked/paced path as Connect — a single full-shard SUBSCRIBE here
+	// would hit the same 1008 rejection (and, per the emit() note, a Resync
+	// storm on an overloaded connection is exactly what we must avoid). id base
+	// 1000 keeps resync acks distinguishable from Connect's in a capture.
+	if err := f.subscribeChunked(1000); err != nil {
 		return fmt.Errorf("binance.ws: resync resubscribe: %w", err)
 	}
 	return nil

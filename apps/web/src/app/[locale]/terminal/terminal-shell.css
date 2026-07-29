@@ -58,3 +58,23 @@
   display: flex;
   flex-direction: column;
 }
+
+/* Symbol cross-venue detail view (2026-07-18, docs/best-price.md) — the
+   simple new-tab page a Screener row click opens. Shares terminal-shell's
+   layout classes above; these two are its only page-specific styling. */
+.t-symbol-detail__back {
+  display: inline-block;
+  margin-bottom: var(--t-space-sm);
+  font-size: var(--t-font-size-label);
+  color: var(--t-color-text-secondary);
+  text-decoration: none;
+}
+.t-symbol-detail__back:hover {
+  color: var(--t-color-text-primary);
+}
+.t-symbol-detail__title {
+  margin: 0 0 var(--t-space-sm);
+  font-size: var(--t-font-size-title);
+  font-weight: 600;
+  color: var(--t-color-text-primary);
+}

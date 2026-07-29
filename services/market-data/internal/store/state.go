@@ -26,6 +26,17 @@ type InstrumentState struct {
 	Volatility24h *decimal.Decimal
 	Spread        *decimal.Decimal
 	UpdatedAt     time.Time
+
+	// venueVolume24h / venueChange24h record that these two fields came from the
+	// venue's own 24h ticker stream (P1.5e) rather than from our candle history.
+	// In-memory only — NOT columns, and never persisted; the flushed row carries
+	// just the values. The recompute loop consults these so it doesn't overwrite
+	// an authoritative venue figure with a candle-derived one: candle stats are
+	// only as good as how long WE have been running (a fresh start has no 1h
+	// candles at all, which is exactly why the screener showed ~35 coins with
+	// nonsense volumes), whereas the ticker figure is correct on first message.
+	venueVolume24h bool
+	venueChange24h bool
 }
 
 // key identifies one (exchange,symbol) pair, matching instrument_state's PK.

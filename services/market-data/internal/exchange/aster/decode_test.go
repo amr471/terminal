@@ -35,6 +35,21 @@ func TestDecodeKlineFinal(t *testing.T) {
 	}
 }
 
+func TestDecodeKline_NumericOHLCFields(t *testing.T) {
+	// Real bug found 2026-07-18: Aster sometimes sends kline OHLC fields as
+	// JSON numbers instead of strings — "l" (low) here, caught via
+	// "cannot unmarshal number into Go struct field .k.l of type string" in
+	// production. flexStr must accept either shape for all four fields.
+	raw := []byte(`{"e":"kline","E":1700000000000,"s":"BTCUSDT","k":{"i":"1h","o":1,"h":3,"l":0.5,"c":2,"v":"10","q":"20","n":5,"x":true}}`)
+	sym, _, c, err := decodeKline(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sym != "btcusdt" || c.Open != "1" || c.High != "3" || c.Low != "0.5" || c.Close != "2" {
+		t.Fatalf("kline = %+v", c)
+	}
+}
+
 func TestDecodeMarkPriceFunding(t *testing.T) {
 	raw := []byte(`{"e":"markPriceUpdate","E":1700000000000,"s":"BTCUSDT","p":"64000","r":"0.00038167","T":1700000400000}`)
 	sym, ts, f, err := decodeMarkPrice(raw)

@@ -1,11 +1,42 @@
 package aster
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
 	"github.com/terminal/market-data/internal/norm"
 )
+
+// flexStr unmarshals a JSON string OR a JSON number into a Go string,
+// without ever routing the value through a float (CLAUDE.md §2: never
+// parseFloat a Dec). Same pattern as mexc's flexStr (decode.go there) —
+// added here 2026-07-18 after a real production error: Aster's kline "k.l"
+// (low price) field, typed as a plain Go string, arrived as a JSON *number*
+// in some frames ("json: cannot unmarshal number into Go struct field
+// .k.l of type string"), which failed the whole message's decode. Applied
+// to all four OHLC fields defensively, not just the one caught in the log —
+// they're the same data shape from the same vendor, so if one is
+// inconsistent about string-vs-number the others are just as likely to be.
+type flexStr string
+
+func (s *flexStr) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*s = ""
+		return nil
+	}
+	if b[0] == '"' {
+		var str string
+		if err := json.Unmarshal(b, &str); err != nil {
+			return err
+		}
+		*s = flexStr(str)
+		return nil
+	}
+	*s = flexStr(b)
+	return nil
+}
 
 // classify peeks the "e" event discriminator every Aster market stream
 // message carries. Decoded via a raw key map rather than a one-field struct
@@ -57,15 +88,15 @@ type klineMsg struct {
 	EventT int64  `json:"E"`
 	Symbol string `json:"s"`
 	K      struct {
-		Interval    string `json:"i"`
-		Open        string `json:"o"`
-		High        string `json:"h"`
-		Low         string `json:"l"`
-		Close       string `json:"c"`
-		Volume      string `json:"v"`
-		QuoteVolume string `json:"q"`
-		Trades      int    `json:"n"`
-		Final       bool   `json:"x"`
+		Interval    string  `json:"i"`
+		Open        flexStr `json:"o"`
+		High        flexStr `json:"h"`
+		Low         flexStr `json:"l"`
+		Close       flexStr `json:"c"`
+		Volume      string  `json:"v"`
+		QuoteVolume string  `json:"q"`
+		Trades      int     `json:"n"`
+		Final       bool    `json:"x"`
 	} `json:"k"`
 }
 
@@ -75,7 +106,7 @@ func decodeKline(raw []byte) (symbol string, ts int64, candle norm.Candle, err e
 		return "", 0, norm.Candle{}, fmt.Errorf("aster: decode kline: %w", err)
 	}
 	return norm.NormalizeSymbol(m.Symbol), m.EventT, norm.Candle{
-		TF: m.K.Interval, Open: m.K.Open, High: m.K.High, Low: m.K.Low, Close: m.K.Close,
+		TF: m.K.Interval, Open: string(m.K.Open), High: string(m.K.High), Low: string(m.K.Low), Close: string(m.K.Close),
 		Volume: m.K.Volume, QuoteVolume: m.K.QuoteVolume, TradeCount: m.K.Trades, Final: m.K.Final,
 	}, nil
 }

@@ -34,28 +34,36 @@ func (adapter) ProvidedKinds() []string {
 	return []string{norm.KindTrades, norm.KindCandles, norm.KindBook, norm.KindFunding, norm.KindOI}
 }
 
-// Limits: verified 2026-07-17 against OKX v5 docs (the VERIFY this comment
-// used to carry was never resolved before P1.5c shipped, and a real run that
-// day hit the consequence — see the bug note below). OKX has no documented
-// cap on the *number* of simultaneous subscriptions a connection may hold —
-// unlike Binance's explicit 1024-streams/conn — so MaxStreamsPerConn stays 0
-// (shardSize treats that as uncapped, giving OKX one shard per venue). The
-// real per-connection constraints are a 4096-byte cap on any single SUBSCRIBE
-// message's arg payload and a 3-requests/second subscribe rate limit (480/hr
-// total); ws.go's subscribeBatches + subscribeAll respect both by chunking
-// and pacing the writes, so shard size doesn't need to shrink to work around
-// them.
+// Limits: verified 2026-07-17 against OKX v5 docs that OKX itself has no
+// documented cap on the *number* of simultaneous subscriptions a connection
+// may hold, and that call was correct as far as it went — the 1009 bug found
+// that day (message-too-big on the initial SUBSCRIBE) was fixed by chunking
+// the SUBSCRIBE payload, not by sharding, and shard=1 kept working from
+// OKX's side after that fix.
 //
-// Real bug found + fixed 2026-07-17: with MaxStreamsPerConn treated as
-// uncapped and 200 symbols x StreamsPerSymbol()=10 in one shard, WSFeed used
-// to send all ~2000 args in a single SUBSCRIBE message — ~10x over the
-// 4096-byte limit — and OKX rejected the connection outright with
-// `websocket: close 1009 (message too big)`. Fixed in ws.go/decode.go, not
-// here: this file's shard-sizing story turned out to be correct all along.
+// Real bug found 2026-07-19, different from 2026-07-17's: shard=1 means all
+// 200 symbols x StreamsPerSymbol()=10 worth of live traffic funnels through
+// ONE connection's ONE Manager.consume goroutine (internal/conn/manager.go),
+// and that goroutine can't keep up with real market throughput regardless of
+// what OKX itself allows — hundreds of "dropped message; consumer too slow"
+// warnings per second, cascading into spurious "sequence anomaly;
+// resyncing" that made the burst worse (see the emit() fix in ws.go). OKX
+// not capping subscription count doesn't mean WE shouldn't cap shard size —
+// MaxStreamsPerConn=500 here is a self-imposed choice for consumer
+// throughput (shardSize=500/10=50 symbols/shard, shardCount=ceil(200/50)=4
+// shards for a full 200-symbol venue), independent of anything OKX
+// documents. Kept deliberately smaller than Bybit's 19-shard fix (same bug,
+// bybit/adapter.go): OKX's real, documented constraint is 3 new-connection
+// establishments/second per IP, so a startup burst of 4 dials stays
+// comfortably under that, where 19 would not — any transient rejection still
+// self-heals via Manager's existing jittered backoff. The existing 4096-
+// byte/message + 3-req/s subscribe-rate handling (subscribeBatches/
+// subscribeAll, per-connection) is unaffected by this — smaller shards mean
+// each one's SUBSCRIBE payload is smaller too, if anything easier to fit.
 func (adapter) Limits() exchange.Limits {
 	return exchange.Limits{
-		MaxStreamsPerConn: 0,
-		WeightNote:        "v5 public: no documented per-connection subscription-count cap; 4096-byte/message + 3 req/s subscribe rate limit instead, handled by chunked+paced SUBSCRIBE writes (verified 2026-07-17)",
+		MaxStreamsPerConn: 500,
+		WeightNote:        "v5 public: no documented per-connection subscription-count cap, but MaxStreamsPerConn=500 (~4 shards) is self-imposed for consumer throughput (fixed 2026-07-19) — 4096-byte/message + 3 req/s subscribe rate limit still handled per-connection by chunked+paced SUBSCRIBE writes (verified 2026-07-17); OKX's separate 3 new-connections/sec/IP limit is why this is 4 shards, not 19 like Bybit",
 	}
 }
 

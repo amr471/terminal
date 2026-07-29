@@ -122,18 +122,35 @@ type tickerMsg struct {
 	NextFundingTime *string `json:"nextFundingTime"`
 	OpenInterest    *string `json:"openInterest"`
 	OpenInterestUSD *string `json:"openInterestValue"`
+	// 24h stats (P1.5e). Already on this same `tickers.{sym}` topic we
+	// subscribe — they were simply being discarded before.
+	LastPrice    *string `json:"lastPrice"`
+	Volume24h    *string `json:"volume24h"`    // base asset
+	Turnover24h  *string `json:"turnover24h"`  // quote asset (USDT)
+	Price24hPcnt *string `json:"price24hPcnt"` // already a FRACTION ("0.0308"), not a percent
+	HighPrice24h *string `json:"highPrice24h"`
+	LowPrice24h  *string `json:"lowPrice24h"`
 }
 
-// decodeTicker returns funding/OI updates present on THIS message only —
-// tickers deltas omit unchanged fields, so a nil pointer here means "not on
-// this update," not "zero."
-func decodeTicker(topicParts []string, env topicEnvelope) (symbol string, ts int64, funding *norm.Funding, oi *norm.OI, err error) {
+// tickerDecoded carries every payload one `tickers` message can produce.
+// Pointers throughout because Bybit's tickers topic sends a full snapshot
+// first and DELTAS after: an absent field means "unchanged on this update,"
+// not zero, so we must not emit a payload we didn't actually receive.
+type tickerDecoded struct {
+	funding *norm.Funding
+	oi      *norm.OI
+	ticker  *norm.Ticker
+}
+
+// decodeTicker returns the funding/OI/24h-stats updates present on THIS
+// message only — see tickerDecoded on why everything is a pointer.
+func decodeTicker(topicParts []string, env topicEnvelope) (symbol string, ts int64, out tickerDecoded, err error) {
 	if len(topicParts) < 1 {
-		return "", 0, nil, nil, fmt.Errorf("bybit: malformed tickers topic")
+		return "", 0, tickerDecoded{}, fmt.Errorf("bybit: malformed tickers topic")
 	}
 	var m tickerMsg
 	if err := json.Unmarshal(env.Data, &m); err != nil {
-		return "", 0, nil, nil, fmt.Errorf("bybit: decode tickers: %w", err)
+		return "", 0, tickerDecoded{}, fmt.Errorf("bybit: decode tickers: %w", err)
 	}
 	symbol = norm.NormalizeSymbol(topicParts[0])
 	ts = env.TS
@@ -144,16 +161,42 @@ func decodeTicker(topicParts []string, env topicEnvelope) (symbol string, ts int
 				f.NextFundingTS = ms
 			}
 		}
-		funding = &f
+		out.funding = &f
 	}
 	if m.OpenInterest != nil {
 		o := norm.OI{OpenInterest: *m.OpenInterest}
 		if m.OpenInterestUSD != nil {
 			o.OpenInterestUSD = *m.OpenInterestUSD
 		}
-		oi = &o
+		out.oi = &o
 	}
-	return symbol, ts, funding, oi, nil
+	// A volume figure is the minimum that makes a ticker worth emitting — it's
+	// the field the screener actually filters and sorts on.
+	if m.Volume24h != nil || m.Turnover24h != nil {
+		tk := norm.Ticker{}
+		if m.LastPrice != nil {
+			tk.Last = *m.LastPrice
+		}
+		if m.Volume24h != nil {
+			tk.Volume24h = *m.Volume24h
+		}
+		if m.Turnover24h != nil {
+			tk.QuoteVolume24h = *m.Turnover24h
+		}
+		// Bybit publishes price24hPcnt as a fraction already, so unlike
+		// Binance's "P" there's no /100 conversion here.
+		if m.Price24hPcnt != nil {
+			tk.Change24h = *m.Price24hPcnt
+		}
+		if m.HighPrice24h != nil {
+			tk.High24h = *m.HighPrice24h
+		}
+		if m.LowPrice24h != nil {
+			tk.Low24h = *m.LowPrice24h
+		}
+		out.ticker = &tk
+	}
+	return symbol, ts, out, nil
 }
 
 type orderbookMsg struct {

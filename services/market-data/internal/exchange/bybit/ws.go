@@ -62,7 +62,12 @@ func (f *WSFeed) Connect(ctx context.Context) error {
 		return fmt.Errorf("bybit.ws: subscribe: %w", err)
 	}
 	f.conn = c
-	f.msgs = make(chan conn.RawMsg, 256)
+	// 1024, not 256: real-load logs (2026-07-19) showed persistent "dropped
+	// message; consumer too slow" here before the MaxStreamsPerConn fix
+	// (adapter.go) — bumping the buffer is defense-in-depth on top of that
+	// fix, not a replacement for it, same precedent OKX's buffer got
+	// 2026-07-18 for the same reason.
+	f.msgs = make(chan conn.RawMsg, 1024)
 	f.books = make(map[string]*bookSeq)
 	loopCtx, cancel := context.WithCancel(ctx)
 	f.cancel = cancel
@@ -128,16 +133,19 @@ func (f *WSFeed) handle(raw []byte) {
 			f.emit(symbol, norm.KindCandles, tf, norm.TypeCandle, k.TS, k.Candle)
 		}
 	case "tickers":
-		symbol, ts, funding, oi, err := decodeTicker(parts, env)
+		symbol, ts, decoded, err := decodeTicker(parts, env)
 		if err != nil {
 			f.log.Warn("decode tickers failed", "err", err)
 			return
 		}
-		if funding != nil {
-			f.emit(symbol, norm.KindFunding, "", norm.TypeFunding, ts, *funding)
+		if decoded.funding != nil {
+			f.emit(symbol, norm.KindFunding, "", norm.TypeFunding, ts, *decoded.funding)
 		}
-		if oi != nil {
-			f.emit(symbol, norm.KindOI, "", norm.TypeOI, ts, *oi)
+		if decoded.oi != nil {
+			f.emit(symbol, norm.KindOI, "", norm.TypeOI, ts, *decoded.oi)
+		}
+		if decoded.ticker != nil {
+			f.emit(symbol, norm.KindTicker, "", norm.TypeTicker, ts, *decoded.ticker)
 		}
 	case "orderbook":
 		msg, err := decodeOrderbook(env)
@@ -195,15 +203,25 @@ func (f *WSFeed) emitBook(sym string, msg orderbookMsg, snapshot bool) {
 
 func (f *WSFeed) emit(symbol, kind, tf string, typ norm.MessageType, ts int64, data any) {
 	ch := norm.Channel{Exchange: exchangeName, Symbol: symbol, Kind: kind, TF: tf}
-	env := norm.Envelope{
+	// Seq only assigned on actual enqueue — real bug found 2026-07-19: the
+	// old code assigned Seq unconditionally before the backpressure-drop
+	// check below, so a dropped message still consumed a sequence number.
+	// Manager.checkSeq (internal/conn/manager.go) then saw a gap and
+	// misdiagnosed an ordinary drop as a real "sequence anomaly," triggering
+	// a Resync() that resubscribes every symbol on this shard — adding
+	// SUBSCRIBE traffic on top of an already-overloaded connection and
+	// making the burst worse (confirmed: today's log showed hundreds of
+	// "dropped message"/"sequence anomaly" pairs in tight bursts). Safe
+	// without a lock: emit() only ever runs on readLoop, this feed's single
+	// producer of f.msgs.
+	if len(f.msgs) >= cap(f.msgs) {
+		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
+		return
+	}
+	f.msgs <- conn.RawMsg{Channel: ch, Env: norm.Envelope{
 		V: 1, Type: typ, Src: exchangeName, Sym: symbol,
 		TS: ts, RTS: time.Now().UnixMilli(), Seq: f.seq.Add(1), Data: data,
-	}
-	select {
-	case f.msgs <- conn.RawMsg{Channel: ch, Env: env}:
-	default:
-		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
-	}
+	}}
 }
 
 func (f *WSFeed) Messages() <-chan conn.RawMsg { return f.msgs }

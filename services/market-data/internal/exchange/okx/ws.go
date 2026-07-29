@@ -59,7 +59,14 @@ func (f *WSFeed) Connect(ctx context.Context) error {
 	// during that window would let acks/data pile up unread for the whole
 	// subscribe duration instead of the usual sub-second window.
 	f.conn = c
-	f.msgs = make(chan conn.RawMsg, 256)
+	// 1024, not the 256 other single-shard-multiplexed venues default to:
+	// OKX puts a full 200-symbol shard on one connection (Limits().
+	// MaxStreamsPerConn is uncapped — see adapter.go), and real-load logs
+	// (2026-07-18) showed persistent "dropped message; consumer too slow"
+	// here — 256 was undersized for trades+funding+OI+books5+6 candle
+	// streams x 200 symbols. Same fix hyperliquid/bingx already got
+	// 2026-07-17 for the same reason.
+	f.msgs = make(chan conn.RawMsg, 1024)
 	loopCtx, cancel := context.WithCancel(ctx)
 	f.cancel = cancel
 	go f.readLoop(cancel)
@@ -174,15 +181,18 @@ func (f *WSFeed) handle(raw []byte) {
 
 func (f *WSFeed) emit(symbol, kind, tf string, typ norm.MessageType, ts int64, data any) {
 	ch := norm.Channel{Exchange: exchangeName, Symbol: symbol, Kind: kind, TF: tf}
-	env := norm.Envelope{
+	// Seq only assigned on actual enqueue — see bybit/ws.go's WSFeed.emit
+	// comment for the full reasoning (same fix, applied repo-wide, 2026-07-19,
+	// same bug class that caused today's "dropped message"/"sequence
+	// anomaly" pairs on this venue too).
+	if len(f.msgs) >= cap(f.msgs) {
+		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
+		return
+	}
+	f.msgs <- conn.RawMsg{Channel: ch, Env: norm.Envelope{
 		V: 1, Type: typ, Src: exchangeName, Sym: symbol,
 		TS: ts, RTS: time.Now().UnixMilli(), Seq: f.seq.Add(1), Data: data,
-	}
-	select {
-	case f.msgs <- conn.RawMsg{Channel: ch, Env: env}:
-	default:
-		f.log.Warn("dropped message; consumer too slow", "channel", ch.String())
-	}
+	}}
 }
 
 func (f *WSFeed) Messages() <-chan conn.RawMsg { return f.msgs }

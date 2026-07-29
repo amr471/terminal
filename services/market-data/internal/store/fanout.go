@@ -61,6 +61,8 @@ func (f *FanoutSink) route(ctx context.Context, msg conn.RawMsg) {
 		f.agg.OnFunding(ctx, exchange, symbol, msg.Env, data)
 	case norm.OI:
 		f.agg.OnOI(ctx, exchange, symbol, msg.Env, data)
+	case norm.Ticker:
+		f.agg.OnTicker(ctx, exchange, symbol, msg.Env, data)
 	default:
 		f.log.Warn("fanout: unroutable envelope data type", "type", msg.Env.Type, "channel", msg.Channel.String())
 	}

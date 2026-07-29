@@ -40,6 +40,8 @@ export const en = {
   'status.session.open': 'Open',
   'status.session.closed': 'Closed',
   'status.session.overlap': 'Overlap',
+  'status.session.all_closed': 'Between sessions',
+  'status.session.weekend': 'Weekend — equities & FX closed',
   'status.next_event': 'Next high-impact event in {hours}h',
   'status.secondary_clock.add': 'Add clock',
   'status.secondary_clock.change': 'Change timezone',
@@ -77,7 +79,19 @@ export const en = {
   'screener.status.live': 'Live',
   'screener.columns_config': 'Columns',
   'screener.columns_config_label': 'Show/hide columns',
+  'screener.presets_label': 'Preset screens',
+  'screener.venue_priority': 'Exchange priority',
+  'screener.venue_priority_label': 'Exchange priority order',
+  'screener.venue_priority_hint':
+    'One row per coin. The highest-listed exchange that has the coin supplies its price and values.',
+  'screener.venue_priority_reset': 'Reset to default',
+  'screener.venue_move_up': 'Move up',
+  'screener.venue_move_down': 'Move down',
   'screener.exchange_filter.all': 'All exchanges',
+  'screener.asset_class_filter.label': 'Coins vs stocks',
+  'screener.asset_class_filter.all': 'Coins + stocks',
+  'screener.asset_class_filter.coin': 'Coins only',
+  'screener.asset_class_filter.stock': 'Stocks only',
   'screener.preset.high_volume_losers': 'High-volume losers',
   'screener.preset.negative_funding': 'Negative funding',
   'screener.preset.unusual_oi': 'Unusual open interest',
@@ -115,6 +129,13 @@ export const en = {
   'bestprice.column.bestAskVenue': 'Ask venue',
   'bestprice.column.spread': 'Spread',
   'bestprice.column.venueCount': 'Venues',
+  // Symbol detail view (2026-07-18) — opened from a Screener row click,
+  // docs/best-price.md.
+  'bestprice.symbol_detail.title': 'Cross-venue price — {symbol}',
+  'bestprice.symbol_detail.back': '← Back to terminal',
+  // Venue badges become links to the real exchange (2026-07-18, Screener +
+  // Best Price tables) — this is the link's accessible name/title.
+  'common.open_on_exchange': 'Open {symbol} on {exchange}',
 
   // Alerts
   'alerts.create': 'Create alert',

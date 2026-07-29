@@ -196,6 +196,66 @@ func (a *Aggregator) OnFunding(ctx context.Context, exchange, symbol string, env
 	}
 }
 
+// OnTicker applies a venue's own rolling 24h stats (P1.5e) — the authoritative
+// source for the screener's volume_24h/change_24h.
+//
+// Why this exists: those two fields used to be derived exclusively by summing
+// OUR OWN recorded 1h candles (recomputeOne -> Volume24h/PriorClose), and
+// OnCandle only persists a bucket once it's FINAL. So a freshly started process
+// had no candle history and left volume_24h NULL for every symbol — and since
+// the screener's `volume_24h > 0` filter can never match NULL, almost every
+// coin (including all of Binance) silently vanished from the table. A venue's
+// 24h ticker is correct on the first message, so it fixes both the coin count
+// and the nonsense partial-window volumes.
+//
+// Price is updated here too: many venues push tickers for symbols that trade
+// thinly enough to go long stretches without an aggTrade, and a symbol with no
+// price is skipped by recomputeOne entirely.
+func (a *Aggregator) OnTicker(ctx context.Context, exchange, symbol string, env norm.Envelope, tk norm.Ticker) {
+	// Prefer quote volume (USDT) when the venue reports it: it's comparable
+	// across symbols at wildly different price levels, which is the whole point
+	// of a volume sort. Falls back to base volume otherwise. Same COALESCE
+	// preference the candle-derived Volume24h query already uses.
+	volStr := tk.QuoteVolume24h
+	if volStr == "" {
+		volStr = tk.Volume24h
+	}
+
+	a.mu.Lock()
+	s := a.stateFor(exchange, symbol)
+	if v, err := decimal.NewFromString(volStr); err == nil && volStr != "" {
+		s.Volume24h = &v
+		s.venueVolume24h = true
+	}
+	if tk.Change24h != "" {
+		if c, err := decimal.NewFromString(tk.Change24h); err == nil {
+			s.Change24h = &c
+			s.venueChange24h = true
+		}
+	}
+	if tk.Last != "" {
+		if p, err := decimal.NewFromString(tk.Last); err == nil {
+			s.Price = &p
+		}
+	}
+	s.UpdatedAt = time.UnixMilli(env.TS)
+	tc := tickerCache{TS: env.TS}
+	if s.Price != nil {
+		tc.Price = s.Price.String()
+	}
+	if s.FundingRate != nil {
+		tc.FundingRt = s.FundingRate.String()
+	}
+	if s.OpenInterest != nil {
+		tc.OI = s.OpenInterest.String()
+	}
+	a.mu.Unlock()
+
+	if tc.Price != "" {
+		a.writeTickerCache(ctx, exchange, symbol, tc)
+	}
+}
+
 // OnOI updates the live open-interest reading and persists to the
 // hypertable.
 func (a *Aggregator) OnOI(ctx context.Context, exchange, symbol string, env norm.Envelope, oi norm.OI) {
@@ -354,12 +414,18 @@ func (a *Aggregator) recomputeOne(ctx context.Context, exchange, symbol string, 
 	if prior1h != nil {
 		s.Change1h = percentChange(*current, *prior1h)
 	}
-	if prior24h != nil {
+	// The venue's own 24h figures win over anything we derive from candles: ours
+	// are only as complete as our uptime (see OnTicker). Without these guards a
+	// recompute would overwrite a correct venue volume with a partial-window sum
+	// — or with nil, re-hiding the symbol from the `volume_24h > 0` filter.
+	if prior24h != nil && !s.venueChange24h {
 		s.Change24h = percentChange(*current, *prior24h)
 	}
 	if prior7d != nil {
 		s.Change7d = percentChange(*current, *prior7d)
 	}
-	s.Volume24h = vol24h
+	if !s.venueVolume24h {
+		s.Volume24h = vol24h
+	}
 	s.Volatility24h = volatility24h(closes)
 }

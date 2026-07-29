@@ -29,13 +29,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   EXCHANGES,
+  consolidateByVenuePreference,
+  isStockToken,
   validateFilterNode,
   type CategoricalField,
   type FilterGroup,
   type Locale,
   type NumericOp,
   type ScreenDefinition,
-  type ScreenerField,
+  type ScreenerRow,
+  type ScreenerSortField,
 } from '@terminal/types';
 import {
   ALL_SCREENER_COLUMNS,
@@ -59,6 +62,56 @@ import {
 import { screenerExportFilename, screenerRowsToCsv } from '../lib/screenerExport';
 
 const COLUMNS_STORAGE_KEY = 'terminal.screener.columns';
+
+/** Venue-priority order (2026-07-26 request: "I want the user to select the
+ * priority of the exchanges from which prices and values are displayed").
+ * Per-browser like the column config — same scope call, not a server-side
+ * ScreenDefinition concern, since this only decides which of the already-
+ * fetched rows to DISPLAY per symbol. */
+const VENUE_PRIORITY_STORAGE_KEY = 'terminal.screener.venuePriority';
+
+/** Last screen the user had selected, restored on arrival (2026-07-26). Stores
+ * only the id — the definition itself always comes fresh from the gateway, so a
+ * preset that changes server-side is picked up rather than frozen per browser. */
+const LAST_SCREEN_STORAGE_KEY = 'terminal.screener.lastScreenId';
+
+function rememberScreen(id: string | null): void {
+  try {
+    if (id) window.localStorage.setItem(LAST_SCREEN_STORAGE_KEY, id);
+    else window.localStorage.removeItem(LAST_SCREEN_STORAGE_KEY);
+  } catch {
+    // Storage full/unavailable — restoring on next visit just won't happen.
+  }
+}
+
+/** Reorders `list` by moving the item at `from` to index `to`, clamped.
+ * Pure so the ordering rule is unit-testable away from React. */
+export function moveVenue(list: readonly string[], from: number, to: number): string[] {
+  const out = [...list];
+  if (from < 0 || from >= out.length) return out;
+  const target = Math.max(0, Math.min(out.length - 1, to));
+  const [item] = out.splice(from, 1);
+  if (item === undefined) return out;
+  out.splice(target, 0, item);
+  return out;
+}
+
+/** Repairs a stored order against the current EXCHANGES list: keeps the user's
+ * sequence, drops venues that no longer exist, and appends any newly added
+ * venue at the end rather than silently omitting it. */
+export function reconcileVenuePriority(stored: readonly unknown[]): string[] {
+  const known = new Set<string>(EXCHANGES);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of stored) {
+    if (typeof v === 'string' && known.has(v) && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  for (const v of EXCHANGES) if (!seen.has(v)) out.push(v);
+  return out;
+}
 
 function defaultDefinition(): ScreenDefinition {
   return { version: 1, root: defaultGroup(), sort: { field: 'volume_24h', dir: 'desc' } };
@@ -139,13 +192,28 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
   const [dirty, setDirty] = useState(false);
   const [columns, setColumns] = useState<ScreenerColumnId[]>(() => [...DEFAULT_VISIBLE_COLUMNS]);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
+  /** User-chosen venue priority (2026-07-26). Index 0 wins outright for any
+   * symbol it lists; the rest is the tie-break order behind the highest-volume
+   * rule. Defaults to EXCHANGES (Binance first) — the previous hardcoded
+   * behavior, so an untouched install is unchanged. */
+  const [venuePriority, setVenuePriority] = useState<string[]>(() => [...EXCHANGES]);
+  const [showVenuePriority, setShowVenuePriority] = useState(false);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [saveAsName, setSaveAsName] = useState('');
   /** Quick-pick "show all coins on this exchange" (2026-07-17 request) — a
    * separate, additive constraint layered on top of the actual filter tree,
    * not a value inside it. '' means no constraint (every venue). */
   const [exchangeFilter, setExchangeFilter] = useState('');
+  /** Coins-vs-stocks quick filter (2026-07-19 request) — a client-side
+   * `isStockToken` heuristic, not a server-side filter-tree constraint,
+   * since `asset_class` is still hardcoded "crypto" everywhere server-side
+   * (see isStockToken's doc comment, @terminal/types). '' = no filter. */
+  const [assetClassFilter, setAssetClassFilter] = useState<'' | 'coin' | 'stock'>('');
   const initializedRef = useRef(false);
+
+  /** Built-in presets only — user-saved screens stay in the dropdown so the
+   * chip row stays a bounded, glanceable set. */
+  const presetScreens = useMemo(() => screens.filter((s) => s.isPreset), [screens]);
 
   const effectiveDefinition = useMemo<ScreenDefinition>(
     () =>
@@ -157,20 +225,49 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
   const { rows, status } = useScreenerSubscription({ definition: effectiveDefinition });
   const errors = useMemo(() => validateFilterNode(pendingRoot), [pendingRoot]);
 
-  // Load saved screens + presets once; auto-select the first (a preset,
-  // server-ordered first) so first paint shows something live rather than
-  // the trivial "volume > 0" default — but never clobber a faster user
-  // action (New/manual select), guarded by initializedRef.
+  /** What's actually shown/exported/counted — 2026-07-19: one row per
+   * symbol, Binance preferred (falls back to whichever other venue lists
+   * it), plus the coins-vs-stocks quick filter. `rows` itself (the raw
+   * per-(exchange,symbol) subscription output) is untouched — the
+   * underlying Screener data model stays the discovery-use-case one row
+   * per pair (docs/screener.md); this is a display-layer transform only,
+   * so it never affects what's stored in a saved screen's definition.
+   * Filter before consolidate: cheaper (smaller set to dedupe), and order
+   * doesn't change the result either way since the two operations are
+   * independent (consolidateByVenuePreference preserves relative order). */
+  const displayRows = useMemo<ScreenerRow[]>(() => {
+    const filtered =
+      assetClassFilter === ''
+        ? rows
+        : rows.filter((r) => isStockToken(r.symbol) === (assetClassFilter === 'stock'));
+    return consolidateByVenuePreference(filtered, venuePriority);
+  }, [rows, assetClassFilter, venuePriority]);
+
+  // Load saved screens + presets once, then restore the screen the user had
+  // open last (2026-07-26 request: "when a person visits the site, they
+  // immediately get to the new filter" — resolved as: land on the screen you
+  // were last using, with the editor already open and editable). Falls back to
+  // the first preset when there's no remembered screen or it no longer exists
+  // (deleted, or a preset id that changed), so first paint is never the
+  // trivial "volume > 0" default. Never clobbers a faster user action
+  // (New/manual select), guarded by initializedRef.
   useEffect(() => {
+    let remembered: string | null = null;
+    try {
+      remembered = window.localStorage.getItem(LAST_SCREEN_STORAGE_KEY);
+    } catch {
+      // Storage unavailable — fall through to the first preset.
+    }
     listScreens()
       .then((list) => {
         setScreens(list);
-        const first = list[0];
-        if (!initializedRef.current && first) {
+        const restored = remembered ? list.find((s) => s.id === remembered) : undefined;
+        const target = restored ?? list[0];
+        if (!initializedRef.current && target) {
           initializedRef.current = true;
-          setSelectedId(first.id);
-          setDefinition(first.definition);
-          setPendingRoot(first.definition.root);
+          setSelectedId(target.id);
+          setDefinition(target.definition);
+          setPendingRoot(target.definition.root);
         }
       })
       .catch(() => {
@@ -206,10 +303,34 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
     }
   }
 
+  // Venue priority, same lazy-read + per-browser persistence as the columns
+  // above. Reconciled against EXCHANGES so a venue added or removed since the
+  // order was saved doesn't corrupt it (see reconcileVenuePriority).
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(VENUE_PRIORITY_STORAGE_KEY);
+      if (!stored) return;
+      const parsed: unknown = JSON.parse(stored);
+      if (Array.isArray(parsed)) setVenuePriority(reconcileVenuePriority(parsed));
+    } catch {
+      // Corrupt or unavailable storage — the EXCHANGES default stands.
+    }
+  }, []);
+
+  function persistVenuePriority(next: string[]): void {
+    setVenuePriority(next);
+    try {
+      window.localStorage.setItem(VENUE_PRIORITY_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Storage full/unavailable — still updates for this session.
+    }
+  }
+
   function handleNew(): void {
     initializedRef.current = true;
     const fresh = defaultDefinition();
     setSelectedId(null);
+    rememberScreen(null); // a fresh filter is what to restore next visit
     setDefinition(fresh);
     setPendingRoot(fresh.root);
     setDirty(false);
@@ -224,6 +345,7 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
     if (!screen) return;
     initializedRef.current = true;
     setSelectedId(id);
+    rememberScreen(id);
     setDefinition(screen.definition);
     setPendingRoot(screen.definition.root);
     setDirty(false);
@@ -235,7 +357,7 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
     setDirty(false);
   }
 
-  function handleSort(field: ScreenerField): void {
+  function handleSort(field: ScreenerSortField): void {
     setDefinition((prev) => ({
       ...prev,
       sort: { field, dir: prev.sort?.field === field && prev.sort.dir === 'desc' ? 'asc' : 'desc' },
@@ -268,6 +390,7 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
     setScreens((prev) => [...prev, created]);
     initializedRef.current = true;
     setSelectedId(created.id);
+    rememberScreen(created.id);
     setDefinition(created.definition);
     setPendingRoot(created.definition.root);
     setDirty(false);
@@ -284,7 +407,7 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
 
   function handleExport(): void {
     const csv = screenerRowsToCsv(
-      rows,
+      displayRows,
       columns,
       (id) => t(locale, COLUMN_LABEL_KEY[id]),
       t(locale, 'screener.export.watermark', { url: window.location.origin }),
@@ -335,6 +458,16 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
             </option>
           ))}
         </select>
+        <select
+          className="t-screener__picker"
+          aria-label={t(locale, 'screener.asset_class_filter.label')}
+          value={assetClassFilter}
+          onChange={(e) => setAssetClassFilter(e.target.value as '' | 'coin' | 'stock')}
+        >
+          <option value="">{t(locale, 'screener.asset_class_filter.all')}</option>
+          <option value="coin">{t(locale, 'screener.asset_class_filter.coin')}</option>
+          <option value="stock">{t(locale, 'screener.asset_class_filter.stock')}</option>
+        </select>
         <button type="button" className="t-screener__btn" onClick={handleNew}>
           {t(locale, 'screener.new_screen')}
         </button>
@@ -358,7 +491,7 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
           type="button"
           className="t-screener__btn"
           onClick={handleExport}
-          disabled={rows.length === 0}
+          disabled={displayRows.length === 0}
         >
           {t(locale, 'screener.export')}
         </button>
@@ -368,6 +501,13 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
           onClick={() => setShowColumnPicker((v) => !v)}
         >
           {t(locale, 'screener.columns_config')}
+        </button>
+        <button
+          type="button"
+          className="t-screener__btn"
+          onClick={() => setShowVenuePriority((v) => !v)}
+        >
+          {t(locale, 'screener.venue_priority')}
         </button>
         <HealthBadge state={healthState} label={healthLabel} />
       </div>
@@ -388,6 +528,75 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
               {t(locale, COLUMN_LABEL_KEY[id])}
             </label>
           ))}
+        </div>
+      )}
+
+      {/* One-click presets (2026-07-26). Presets were only reachable through
+          the screens dropdown; as chips they're a single click, which is the
+          point of a preset. User-saved screens stay in the dropdown — mixing
+          them in here would make the row unbounded. */}
+      {presetScreens.length > 0 && (
+        <div
+          className="t-screener__presets"
+          role="group"
+          aria-label={t(locale, 'screener.presets_label')}
+        >
+          {presetScreens.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={`t-screener__preset-chip${selectedId === p.id ? ' is-active' : ''}`}
+              aria-pressed={selectedId === p.id}
+              onClick={() => selectScreen(p.id)}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {showVenuePriority && (
+        <div
+          className="t-screener__venue-priority"
+          role="group"
+          aria-label={t(locale, 'screener.venue_priority_label')}
+        >
+          <p className="t-screener__venue-priority-hint">
+            {t(locale, 'screener.venue_priority_hint')}
+          </p>
+          <ol className="t-screener__venue-list">
+            {venuePriority.map((venue, i) => (
+              <li key={venue} className="t-screener__venue-row">
+                <span className="t-screener__venue-rank t-num">{i + 1}</span>
+                <span className="t-screener__venue-name">{venue}</span>
+                <button
+                  type="button"
+                  className="t-screener__btn"
+                  disabled={i === 0}
+                  aria-label={`${t(locale, 'screener.venue_move_up')}: ${venue}`}
+                  onClick={() => persistVenuePriority(moveVenue(venuePriority, i, i - 1))}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="t-screener__btn"
+                  disabled={i === venuePriority.length - 1}
+                  aria-label={`${t(locale, 'screener.venue_move_down')}: ${venue}`}
+                  onClick={() => persistVenuePriority(moveVenue(venuePriority, i, i + 1))}
+                >
+                  ↓
+                </button>
+              </li>
+            ))}
+          </ol>
+          <button
+            type="button"
+            className="t-screener__btn"
+            onClick={() => persistVenuePriority([...EXCHANGES])}
+          >
+            {t(locale, 'screener.venue_priority_reset')}
+          </button>
         </div>
       )}
 
@@ -445,13 +654,19 @@ export function ScreenerPanel({ locale }: ScreenerPanelProps) {
 
       <div className="t-screener__table-wrap">
         <ScreenerTable
-          rows={rows}
+          rows={displayRows}
           columns={columns}
           columnLabel={(id) => t(locale, COLUMN_LABEL_KEY[id])}
           locale={locale}
           {...(definition.sort ? { sort: definition.sort } : {})}
           onSortChange={handleSort}
           emptyLabel={t(locale, 'data.empty')}
+          onSymbolClick={(symbol) => {
+            // Opens a real new browser tab, not a new internal workspace
+            // tab (P1.3a's tab strip) — this is a lightweight, session-gated
+            // detail view, not a saved layout. See docs/best-price.md.
+            window.open(`/${locale}/terminal/symbol/${encodeURIComponent(symbol)}`, '_blank');
+          }}
         />
       </div>
     </div>

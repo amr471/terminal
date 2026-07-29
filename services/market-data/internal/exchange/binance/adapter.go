@@ -14,7 +14,10 @@ import (
 // stays in ws.go/book.go/oi.go unchanged.
 type adapter struct{}
 
-var _ exchange.Adapter = adapter{}
+var (
+	_ exchange.Adapter     = adapter{}
+	_ exchange.VenueFeeder = adapter{}
+)
 
 // Adapter returns the Binance venue adapter for the registry in
 // cmd/market-data/main.go.
@@ -34,7 +37,17 @@ func (adapter) WireSymbol(symbol string) (string, bool) {
 }
 
 func (adapter) ProvidedKinds() []string {
-	return []string{norm.KindTrades, norm.KindCandles, norm.KindBook, norm.KindFunding, norm.KindOI}
+	return []string{
+		norm.KindTrades, norm.KindCandles, norm.KindBook,
+		norm.KindFunding, norm.KindOI, norm.KindTicker,
+	}
+}
+
+// VenueFeeds returns the all-market 24h ticker (P1.5e) — a venue-wide
+// singleton, not per-shard: `!ticker@arr` already covers every symbol, so one
+// connection serves the whole venue. See ticker.go.
+func (adapter) VenueFeeds(log *slog.Logger) []conn.Feed {
+	return []conn.Feed{NewTickerFeed(log)}
 }
 
 // Limits: verified 2026-07-17 against the live USDS-M futures docs (the

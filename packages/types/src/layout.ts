@@ -97,15 +97,19 @@ export function isValidLayoutDefinition(def: unknown): def is LayoutDefinition {
   return validateLayoutDefinition(def).length === 0;
 }
 
-/** The out-of-the-box view (CLAUDE.md §5: "Default = screener + chart + news"
- * plus P1.7b's consolidated best-price board in its own column — added
- * 2026-07-17 when 'bestprice' joined TERMINAL_PANEL_KINDS. There is no
- * "add panel to an existing saved layout" UI yet (P1.3/P1.3c only ever
- * built resize/reorder/move-between-existing-columns), so a new panel kind
- * only becomes reachable for real users via this default — same reasoning
- * as P1.3's original "default = screener + chart + news" seed. Existing
- * saved layouts (the `layouts` table) are untouched; only fresh tabs pick
- * this up. */
+/** The out-of-the-box view (CLAUDE.md §5: "Default = screener + chart +
+ * news"). P1.7b (2026-07-17) briefly added a third column for the
+ * consolidated best-price board, but real usage (2026-07-18) found the
+ * persistent side panel awkward next to the Screener, which already covers
+ * per-exchange discovery — removed back to the original 2-column default.
+ * 'bestprice' stays in TERMINAL_PANEL_KINDS and BestPricePanel is unchanged;
+ * it's still reachable via the command bar's `BEST` function and, as of
+ * today, via clicking a symbol in the Screener (see docs/best-price.md).
+ * There is still no "add panel to an existing saved layout" UI (P1.3/P1.3c
+ * only ever built resize/reorder/move-between-existing-columns), so those
+ * two entry points are deliberately kept as the only ways to reach it.
+ * Existing saved layouts (the `layouts` table) are untouched; only fresh
+ * tabs pick this up. */
 export function defaultLayoutDefinition(): LayoutDefinition {
   return {
     version: 1,
@@ -118,7 +122,6 @@ export function defaultLayoutDefinition(): LayoutDefinition {
           { kind: 'news', size: 1 },
         ],
       },
-      { size: 1, panels: [{ kind: 'bestprice', size: 1 }] },
     ],
   };
 }

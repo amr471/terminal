@@ -7,6 +7,7 @@
 export * from './market.js';
 export * from './screener.js';
 export * from './bestPrice.js';
+export * from './exchangeLinks.js';
 export * from './alerts.js';
 export * from './strategy.js';
 export * from './health.js';

@@ -44,6 +44,12 @@ const (
 	// per-symbol diff-depth BookFeed, so books scale to the full instrument
 	// universe.
 	bookDepth = 20
+
+	// allTickerStream is the all-market 24h ticker stream: one subscription
+	// covering every listed symbol, pushed ~1/sec as a JSON array. Routed to
+	// /market per Binance's stream mapping ("Ticker: <symbol>@ticker; All:
+	// !ticker@arr"). See ticker.go for why this is a venue-wide singleton.
+	allTickerStream = "!ticker@arr"
 )
 
 // timeframes are Binance's own kline interval strings, which happen to be

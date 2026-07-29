@@ -75,6 +75,23 @@ type OI struct {
 	OpenInterestUSD Dec `json:"openInterestUsd,omitempty"`
 }
 
+// Ticker mirrors TS TickerPayload — a venue's own rolling 24h stats (P1.5e).
+// These are correct on the FIRST message, unlike candle-derived stats which
+// need accumulated history, so this is what populates the screener's
+// volume_24h/change_24h.
+//
+// Change24h is a FRACTION (-0.052 = -5.2%), matching instrument_state's
+// change_* convention: venues publishing a percent must divide by 100 in
+// their decoder (see pctToFraction in each package's decode.go).
+type Ticker struct {
+	Last           Dec `json:"last"`
+	Volume24h      Dec `json:"volume24h"`
+	QuoteVolume24h Dec `json:"quoteVolume24h,omitempty"`
+	Change24h      Dec `json:"change24h,omitempty"`
+	High24h        Dec `json:"high24h,omitempty"`
+	Low24h         Dec `json:"low24h,omitempty"`
+}
+
 // Liq mirrors TS LiqPayload.
 type Liq struct {
 	Side   string `json:"side"` // position side liquidated: "long" | "short"

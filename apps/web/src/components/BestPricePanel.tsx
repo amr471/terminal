@@ -30,10 +30,20 @@ const COLUMN_LABEL_KEY: Record<BestPriceColumnId, MessageKey> = {
 
 export interface BestPricePanelProps {
   locale: Locale;
+  /**
+   * Restricts the panel to a single symbol's cross-venue rows — added
+   * 2026-07-18 for the Screener-row-click detail view (docs/best-price.md).
+   * bestPriceHub.ts has no per-subscriber filter on the wire (every
+   * subscriber gets the same consolidated stream), so this filters the
+   * already-live `rows` client-side; omitted/undefined shows every symbol,
+   * same as before.
+   */
+  symbolFilter?: string;
 }
 
-export function BestPricePanel({ locale }: BestPricePanelProps) {
+export function BestPricePanel({ locale, symbolFilter }: BestPricePanelProps) {
   const { rows, status } = useBestPriceSubscription();
+  const visibleRows = symbolFilter ? rows.filter((row) => row.symbol === symbolFilter) : rows;
 
   const healthState = status === 'live' ? 'LIVE' : status === 'error' ? 'DOWN' : 'DEGRADED';
   const healthLabel =
@@ -50,7 +60,7 @@ export function BestPricePanel({ locale }: BestPricePanelProps) {
       </div>
       <div className="t-screener__table-wrap">
         <BestPriceTable
-          rows={rows}
+          rows={visibleRows}
           columns={ALL_BEST_PRICE_COLUMNS}
           columnLabel={(id) => t(locale, COLUMN_LABEL_KEY[id])}
           locale={locale}

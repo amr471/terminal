@@ -18,7 +18,8 @@
     "dev:reset": "bash scripts/dev-env.sh reset",
     "dev:down": "bash scripts/dev-env.sh down",
     "dev:web": "turbo run dev --filter=@terminal/web",
-    "dev:gateway": "turbo run dev --filter=@terminal/api-gateway"
+    "dev:gateway": "turbo run dev --filter=@terminal/api-gateway",
+    "dev:all": "node scripts/dev-all.mjs"
   },
   "devDependencies": {
     "prettier": "^3.4.2",

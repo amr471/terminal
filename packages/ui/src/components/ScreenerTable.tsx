@@ -16,23 +16,26 @@
  * existed, and consistent with this repo's own pure-math-plus-thin-component
  * convention (no new dependency, same reasoning ResizableColumns/TabBar used).
  *
- * Only real `ScreenerField`s are sortable — `symbol`/`exchange` are identity
- * columns the query engine's `ScreenDefinition.sort` doesn't support ordering
- * by (packages/types/src/screener.ts). That's a deliberate scope call: the
- * live WS delta's `order` array is the single source of truth for row order,
- * computed server-side by `runScreen`; a client-side-only sort on an
- * unsupported field would silently diverge from that order on the next
- * refresh.
+ * Only fields the query engine's `ScreenDefinition.sort` supports ordering by
+ * are sortable — every `ScreenerField` plus `symbol` (`SCREENER_SORT_FIELDS`,
+ * packages/types/src/screener.ts; `symbol` joined 2026-07-19 for an
+ * alphabetical view). `exchange` still isn't — it's categorical, no ordering
+ * defined. That's a deliberate scope call: the live WS delta's `order` array
+ * is the single source of truth for row order, computed server-side by
+ * `runScreen`; a client-side-only sort on an unsupported field would
+ * silently diverge from that order on the next refresh.
  */
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  SCREENER_FIELDS,
+  SCREENER_SORT_FIELDS,
+  exchangeTradeUrl,
   screenerRowKey,
   type Dec,
   type Locale,
-  type ScreenerField,
+  type ScreenerSortField,
   type ScreenerRow,
 } from '@terminal/types';
+import { t } from '@terminal/i18n';
 import { MarqueeText } from './MarqueeText.js';
 import { NumCell } from './NumCell.js';
 import { visibleRange } from '../virtualize.js';
@@ -44,18 +47,32 @@ const PERCENT_FIELDS = new Set<ScreenerColumnId>([
   'change_7d',
   'funding_rate',
 ]);
-const SORTABLE_FIELDS = new Set<string>(SCREENER_FIELDS);
+// 'symbol' joined the sortable set 2026-07-19 (alphabetical view) —
+// SCREENER_SORT_FIELDS is ScreenerFields + 'symbol', 'exchange' still isn't
+// sortable (categorical, no ordering the query engine defines).
+const SORTABLE_FIELDS = new Set<string>(SCREENER_SORT_FIELDS);
 
 // Fixed pixel widths — same rationale as BestPriceTable.tsx's
 // COLUMN_WIDTH_PX (see that file's comment): `table-layout: auto` sizes
 // columns from only the currently-mounted virtualized rows, so scrolling
 // constantly reflows every column and can visibly collapse content
 // ("the columns also move when you scroll down" — reported 2026-07-17
-// against this table specifically). `symbol` is deliberately left unset so
-// it absorbs whatever width the fixed columns don't claim. Column identity
-// doesn't depend on display order, so this stays correct regardless of how
-// the user has reordered/toggled columns via columnConfig.ts.
+// against this table specifically).
+//
+// `symbol` used to be deliberately left unset so it could absorb whatever
+// width the fixed columns didn't claim — but `table-layout: fixed` only
+// grows the *table* to fit the fixed columns; an unset column just gets
+// whatever's left over, which is nothing once a narrow panel's fixed
+// columns already add up to more than the panel is wide. Real bug found
+// 2026-07-18: in a narrowed 3-column workspace, `symbol` was rendering at
+// ~0px — genuinely invisible, not just scrolled out of view ("the names of
+// the coins are not visible, even when I move the gesture to the right and
+// left"). Fixed by giving `symbol` a real width like every other column,
+// plus making it a sticky-left first column (terminal.css) so it stays
+// visible while the metric columns scroll underneath it — the identity
+// column should never be the one that gets squeezed out.
 const COLUMN_WIDTH_PX: Partial<Record<ScreenerColumnId, number>> = {
+  symbol: 120,
   exchange: 90,
   price: 110,
   change_1h: 76,
@@ -69,7 +86,7 @@ const COLUMN_WIDTH_PX: Partial<Record<ScreenerColumnId, number>> = {
   spread: 90,
 };
 
-function isSortable(id: ScreenerColumnId): id is ScreenerField {
+function isSortable(id: ScreenerColumnId): id is ScreenerSortField {
   return SORTABLE_FIELDS.has(id);
 }
 
@@ -90,8 +107,28 @@ function Cell({
 }): ReactNode {
   const value = cellValue(row, id);
   if (value === null) return <span className="t-num t-num--empty">—</span>;
-  if (id === 'symbol' || id === 'exchange')
-    return <span className="t-screener__text">{value}</span>;
+  if (id === 'exchange') {
+    // 2026-07-18: the exchange badge links out to that venue's real trading
+    // page for this row's symbol (docs/screener-ui.md) — separate from a
+    // row click, which opens our internal cross-venue detail tab
+    // (onSymbolClick below), so clicks here must stopPropagation. Falls
+    // back to plain text for a venue exchangeTradeUrl doesn't recognize.
+    const url = exchangeTradeUrl(String(value), row.symbol);
+    if (!url) return <span className="t-screener__text">{value}</span>;
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="t-screener__text t-screener__venue--link"
+        title={t(locale, 'common.open_on_exchange', { symbol: row.symbol, exchange: String(value) })}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {value}
+      </a>
+    );
+  }
+  if (id === 'symbol') return <span className="t-screener__text">{value}</span>;
   return (
     <NumCell
       value={value}
@@ -109,11 +146,18 @@ export interface ScreenerTableProps {
   columns: readonly ScreenerColumnId[];
   columnLabel: (id: ScreenerColumnId) => string;
   locale: Locale;
-  sort?: { field: ScreenerField; dir: 'asc' | 'desc' };
-  onSortChange: (field: ScreenerField) => void;
+  sort?: { field: ScreenerSortField; dir: 'asc' | 'desc' };
+  onSortChange: (field: ScreenerSortField) => void;
   emptyLabel: string;
   /** Defaults to `--t-density-row` (22px) — one line of mono-font data per row. */
   rowHeightPx?: number;
+  /**
+   * Added 2026-07-18 for the Screener-row-click detail view
+   * (docs/best-price.md): when set, rows become clickable (and keyboard-
+   * activatable) and call back with the row's symbol. Omitted keeps rows
+   * inert, same as before.
+   */
+  onSymbolClick?: (symbol: string) => void;
 }
 
 export function ScreenerTable({
@@ -125,6 +169,7 @@ export function ScreenerTable({
   onSortChange,
   emptyLabel,
   rowHeightPx = 22,
+  onSymbolClick,
 }: ScreenerTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ height: 0, scrollTop: 0 });
@@ -215,8 +260,21 @@ export function ScreenerTable({
               {visibleRows.map((row) => (
                 <tr
                   key={screenerRowKey(row)}
-                  className="t-screener__row"
+                  className={`t-screener__row${onSymbolClick ? ' t-screener__row--clickable' : ''}`}
                   style={{ height: rowHeightPx }}
+                  {...(onSymbolClick
+                    ? {
+                        role: 'button',
+                        tabIndex: 0,
+                        onClick: () => onSymbolClick(row.symbol),
+                        onKeyDown: (e: KeyboardEvent) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onSymbolClick(row.symbol);
+                          }
+                        },
+                      }
+                    : {})}
                 >
                   {columns.map((id) => (
                     <td key={id} className="t-screener__td">

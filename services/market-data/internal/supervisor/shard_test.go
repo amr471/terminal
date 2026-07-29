@@ -86,17 +86,28 @@ func TestAssignShardsSingleSlotWhenUncapped(t *testing.T) {
 }
 
 func TestApplyCap(t *testing.T) {
-	syms := []string{"c", "a", "e", "b", "d"}
-	got := applyCap(syms, 3)
-	// Deterministic: sorted, first 3.
-	if fmt.Sprint(got) != "[a b c]" {
-		t.Fatalf("applyCap = %v, want [a b c]", got)
+	// applyCap now PRESERVES the caller's order (P1.5f): it used to sort
+	// alphabetically itself, which silently discarded a volume ranking.
+	ranked := []string{"btcusdt", "ethusdt", "xrpusdt", "akeusdt", "zzzusdt"}
+	if got := applyCap(ranked, 3); fmt.Sprint(got) != "[btcusdt ethusdt xrpusdt]" {
+		t.Fatalf("applyCap = %v, want the first 3 IN ORDER", got)
 	}
-	if capped := applyCap(syms, 0); len(capped) != 5 {
+	if capped := applyCap(ranked, 0); len(capped) != 5 {
 		t.Fatalf("cap 0 should be no-op, got %v", capped)
 	}
 	if capped := applyCap([]string{"a"}, 10); len(capped) != 1 {
 		t.Fatalf("cap larger than set should be no-op")
+	}
+}
+
+func TestSortedByName(t *testing.T) {
+	syms := []string{"c", "a", "e", "b", "d"}
+	if got := sortedByName(syms); fmt.Sprint(got) != "[a b c d e]" {
+		t.Fatalf("sortedByName = %v", got)
+	}
+	// Must not reorder the caller's slice in place.
+	if fmt.Sprint(syms) != "[c a e b d]" {
+		t.Fatalf("sortedByName mutated its input: %v", syms)
 	}
 }
 

@@ -107,6 +107,30 @@ export interface OiPayload {
   openInterestUsd?: Dec;
 }
 
+/**
+ * A venue's own rolling 24h statistics (P1.5e). Distinct from CandlePayload:
+ * these come straight off the exchange's 24h ticker stream and are correct on
+ * the very first message, whereas candle-derived stats need us to have been
+ * running long enough to accumulate history. This is what populates the
+ * screener's `volume_24h` / `change_24h`.
+ */
+export interface TickerPayload {
+  /** Last traded price. */
+  last: Dec;
+  /** 24h volume in the BASE asset. */
+  volume24h: Dec;
+  /** 24h volume in the QUOTE asset (USDT) when the venue reports it. */
+  quoteVolume24h?: Dec;
+  /**
+   * 24h price change as a FRACTION (-0.052 = -5.2%), matching
+   * `instrument_state.change_*` convention. Venues that publish a percent
+   * (e.g. Binance's `P: "-5.2"`) must divide by 100 in their decoder.
+   */
+  change24h?: Dec;
+  high24h?: Dec;
+  low24h?: Dec;
+}
+
 export interface LiqPayload {
   /** Position side that was liquidated. */
   side: 'long' | 'short';
@@ -135,7 +159,7 @@ export function isEnvelope(value: unknown): value is Envelope<unknown> {
 export interface MdChannel {
   exchange: string;
   symbol: string;
-  kind: 'trades' | 'book' | 'candles' | 'funding' | 'oi';
+  kind: 'trades' | 'book' | 'candles' | 'funding' | 'oi' | 'ticker';
   /** Present iff kind === 'candles'. */
   tf?: Timeframe;
 }
@@ -155,7 +179,13 @@ export function parseMdChannel(name: string): MdChannel | null {
   const kind = parts[3];
   if (exchange === undefined || symbol === undefined || kind === undefined) return null;
   if (parts.length === 4) {
-    if (kind === 'trades' || kind === 'book' || kind === 'funding' || kind === 'oi') {
+    if (
+      kind === 'trades' ||
+      kind === 'book' ||
+      kind === 'funding' ||
+      kind === 'oi' ||
+      kind === 'ticker'
+    ) {
       return { exchange, symbol, kind };
     }
     return null;

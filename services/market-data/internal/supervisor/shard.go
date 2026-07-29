@@ -64,16 +64,29 @@ func assignShards(symbols []string, count int) map[int][]string {
 	return out
 }
 
-// applyCap deterministically limits a venue's symbol set to at most n
-// (MAX_SYMBOLS_PER_VENUE). Sorting first means the same subset is chosen every
-// cycle, so the cap doesn't itself cause churn. n<=0 means no cap.
+// applyCap limits a venue's symbol set to at most n (MAX_SYMBOLS_PER_VENUE),
+// keeping the FIRST n in the order given. n<=0 means no cap.
+//
+// The caller owns the ordering, and must pass a deterministic one so the same
+// subset is chosen every cycle and the cap doesn't itself cause churn. Use
+// sortedByName for the default; the supervisor passes a volume-ranked order
+// when the adapter implements exchange.VolumeRanker (P1.5f). This used to sort
+// alphabetically itself, which silently discarded any ranking the caller had
+// applied — and alphabetical is a bad rule here, since only capped symbols get
+// the per-symbol funding/OI feeds.
 func applyCap(symbols []string, n int) []string {
 	if n <= 0 || len(symbols) <= n {
 		return symbols
 	}
-	sorted := append([]string(nil), symbols...)
-	sort.Strings(sorted)
-	return sorted[:n]
+	return symbols[:n]
+}
+
+// sortedByName is the deterministic default ordering, used when a venue can't
+// rank by volume. A copy — never reorders the caller's slice in place.
+func sortedByName(symbols []string) []string {
+	out := append([]string(nil), symbols...)
+	sort.Strings(out)
+	return out
 }
 
 // sameSymbols reports whether two sorted symbol lists are equal (used to

@@ -184,6 +184,16 @@ now an optional static override; `MAX_SYMBOLS_PER_VENUE` (default 200) +
 for per-venue wire quirks, the dynamic-universe design, and documented scope
 calls / VERIFY markers.
 
+**P1.5e (venue 24h ticker):** `volume_24h`/`change_24h` now come from each
+venue's own 24h ticker (`norm.KindTicker`), not from summing our own recorded
+candles — the candle path needed an hour of uptime before a single 1h bucket
+closed, so both columns were NULL on a fresh start and the screener's
+`volume_24h > 0` filter hid nearly every coin (including all of Binance). Adds
+the optional `exchange.VenueFeeder` seam for venue-wide singleton feeds like
+Binance's one-stream `!ticker@arr`. **Wired for binance + bybit only**; the
+other six venues still use the candle path. See `/docs/market-data-feeds.md`
+§P1.5e.
+
 ### 6.13 Screener query engine + UI (P1.6 engine, P1.7 UI, implemented)
 
 Deterministic `field·operator·value` filter tree (AND/OR groups) over the
@@ -225,11 +235,15 @@ float), and pushes live `bestprice.subscribe` deltas on the same `/ws`
 socket — identical payload to every subscriber, since there's no
 per-subscriber filter here. `apps/web`'s `gatewaySocket.ts` generalized from
 screener-only to feature-agnostic multiplexing to carry this. Surfaced as a
-new dedicated panel kind (not folded into the Screener table), reachable via
-the command bar's `BEST` function. See `/docs/best-price.md` for the full
-architecture, the wire contract, and a flagged scope call (no "add panel to
-an existing layout" UI exists yet, so `defaultLayoutDefinition()` grew a
-third column for this panel rather than shipping it unreachable).
+new dedicated panel kind (not folded into the Screener table).
+`defaultLayoutDefinition()` briefly grew a third column for it at P1.7b;
+removed again 2026-07-18 after real usage found the persistent side panel
+awkward next to the Screener. It's reachable via the command bar's `BEST`
+function and via clicking a symbol in the Screener (opens
+`/[locale]/terminal/symbol/[symbol]` in a new browser tab — a simple
+per-symbol cross-venue detail view, not a saved workspace tab). See
+`/docs/best-price.md` for the full architecture, the wire contract, and the
+panel-removal/click-through decision.
 
 ---
 
